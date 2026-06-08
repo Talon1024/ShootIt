@@ -7,6 +7,7 @@
 #define SDL_MAIN_USE_CALLBACKS 1  /* use the callbacks instead of main() */
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <cstdint>
 
 #define VIEW_WIDTH 240
 #define VIEW_HEIGHT 160
@@ -15,6 +16,7 @@
 static SDL_Window *window = NULL;
 static SDL_Renderer *renderer = NULL;
 
+uint32_t getPrimaryDisplay();
 
 /* This function runs once at startup. */
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
@@ -26,13 +28,36 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
 
-    if (!SDL_CreateWindowAndRenderer("Shoot It!", VIEW_WIDTH, VIEW_HEIGHT, SDL_WINDOW_RESIZABLE, &window, &renderer)) {
+    uint32_t primaryDisplayId = getPrimaryDisplay();
+    SDL_Rect screenRect;
+
+    if (primaryDisplayId == 0) {
+        SDL_Log("No display found!");
+        return SDL_APP_FAILURE;
+    }
+
+    if (!SDL_GetDisplayBounds(primaryDisplayId, &screenRect)) {
+        SDL_Log("Could not get primary display size.");
+    }
+
+    if (!SDL_CreateWindowAndRenderer("Shoot It!", screenRect.w, screenRect.h, SDL_WINDOW_RESIZABLE, &window, &renderer)) {
         SDL_Log("Couldn't create window/renderer: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
     SDL_SetRenderLogicalPresentation(renderer, VIEW_WIDTH, VIEW_HEIGHT, SDL_LOGICAL_PRESENTATION_LETTERBOX);
 
     return SDL_APP_CONTINUE;  /* carry on with the program! */
+}
+
+uint32_t getPrimaryDisplay() {
+    int numDisplays;
+    uint32_t primaryDisplayId = 0;
+    uint32_t* displays = SDL_GetDisplays(&numDisplays);
+    if (numDisplays > 0) {
+        primaryDisplayId = *displays; // Deref (copy) the first element.
+    }
+    SDL_free(displays);
+    return primaryDisplayId;
 }
 
 /* This function runs when a new event (mouse input, keypresses, etc) occurs. */

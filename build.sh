@@ -14,3 +14,6 @@ fi
 emcmake cmake -B webuild . && \
     cd webuild && \
     emmake make "-j$(nproc)"
+
+# TODO: Get this working if possible.
+# emcmake cmake -B webuild . -GNinja && emcmake cmake --build webuild --parallel $(nproc)
