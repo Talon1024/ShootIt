@@ -1,7 +1,7 @@
 /*
  * Shoot It (c) Talon1024 2026-present
  *
- * MIT License
+ * GPLv2 License
  */
 
 #define SDL_MAIN_USE_CALLBACKS 1  /* use the callbacks instead of main() */
@@ -12,17 +12,33 @@
 #define VIEW_WIDTH 240
 #define VIEW_HEIGHT 160
 
-/* We will use this renderer to draw into this window every frame. */
-static SDL_Window *window = nullptr;
-static SDL_Renderer *renderer = nullptr;
+enum class GameState {
+    Loading,
+    LoadFail,
+    Play, // or LoadSuccess
+    YouWin, // needed?
+    GameOver,
+};
 
-static SDL_Texture* backgroundTexture = nullptr;
+/* We will use this renderer to draw into this window every frame. */
+static SDL_Window* window = nullptr;
+static SDL_Renderer* renderer = nullptr;
+static SDL_AsyncIOQueue* queue = nullptr;
+static GameState gameState = GameState::Loading;
+
+struct PendingExternalAsset {
+    const char* fname;
+    SDL_AsyncIOOutcome outcome;
+};
+
+#include "assets.h"
 
 uint32_t getPrimaryDisplay();
 SDL_Texture* loadAsset(SDL_Renderer* renderer, const char* fname);
+bool loadAssetAsync(const char* asset);
 
 /* This function runs once at startup. */
-SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
+SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 {
     SDL_SetAppMetadata("Shoot It!", "0.0", "io.github.Talon1024.ShootIt");
 
@@ -49,12 +65,18 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     }
     SDL_SetRenderLogicalPresentation(renderer, VIEW_WIDTH, VIEW_HEIGHT, SDL_LOGICAL_PRESENTATION_LETTERBOX);
     SDL_SetDefaultTextureScaleMode(renderer, SDL_SCALEMODE_PIXELART);
+    SDL_HideCursor();
 
-    // Load the assets
-    backgroundTexture = loadAsset(renderer, "assets/bg.png");
-    if (!backgroundTexture) {
-        SDL_Log("Unable to load background texture.");
+    queue = SDL_CreateAsyncIOQueue();
+    if (!queue) {
+        SDL_Log("Couldn't create async i/o queue: %s", SDL_GetError());
         return SDL_APP_FAILURE;
+    }
+
+    for (const char* asset : assets) {
+        if (!loadAssetAsync(asset)) {
+            return SDL_APP_FAILURE;
+        }
     }
 
     return SDL_APP_CONTINUE;  /* carry on with the program! */
@@ -72,9 +94,10 @@ uint32_t getPrimaryDisplay() {
 }
 
 SDL_Texture* loadAsset(SDL_Renderer* renderer, const char* fname) {
-    char* png_path;
-    SDL_asprintf(&png_path, "%s/%s", SDL_GetBasePath(), fname);
-    SDL_Surface* surf = SDL_LoadPNG(png_path);
+    char* fullpath;
+    SDL_asprintf(&fullpath, "%s/%s", SDL_GetBasePath(), fname);
+    SDL_Surface* surf = SDL_LoadPNG(fullpath);
+    SDL_free(fullpath);
     if (!surf) { return nullptr; }
     SDL_Texture* tex = SDL_CreateTextureFromSurface(renderer, surf);
     SDL_DestroySurface(surf);
@@ -82,11 +105,22 @@ SDL_Texture* loadAsset(SDL_Renderer* renderer, const char* fname) {
     return tex;
 }
 
+bool loadAssetAsync(const char* asset) {
+    char* fullpath;
+    SDL_asprintf(&fullpath, "%s/%s", SDL_GetBasePath(), asset);
+    bool result = SDL_LoadFileAsync(fullpath, queue, nullptr);
+    if (!result) {
+        SDL_Log("Unable to load asset %s: %s", asset, SDL_GetError());
+    }
+    SDL_free(fullpath);
+    return result;
+}
+
 /* This function runs when a new event (mouse input, keypresses, etc) occurs. */
-SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
+SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 {
     if (event->type == SDL_EVENT_QUIT) {
-        return SDL_APP_SUCCESS;  /* end the program, reporting success to the OS. */
+        return SDL_APP_SUCCESS; // end the program, reporting success to the OS.
     }
     return SDL_APP_CONTINUE;  /* carry on with the program! */
 }
@@ -94,19 +128,54 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 /* This function runs once per frame, and is the heart of the program.
  SAFETY: The renderer is most likely initialized.
  */
-SDL_AppResult SDL_AppIterate(void *appstate)
+SDL_AppResult SDL_AppIterate(void* appstate)
 {
     if (!SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)) {
-        SDL_Log("Could not set clear colour");
+        SDL_Log("Could not set clear colour. %s", SDL_GetError());
     }
-    SDL_FRect rect;
-    SDL_RenderTexture(renderer, backgroundTexture, nullptr, nullptr);
+    SDL_MouseButtonFlags mouseButtons;
+    SDL_AsyncIOOutcome outcome;
+
+    if (SDL_GetAsyncIOResult(queue, &outcome)) {
+        //  
+    }
+
+    float cursorX, cursorY;
+    mouseButtons = SDL_GetMouseState(&cursorX, &cursorY);
+    if (!SDL_RenderCoordinatesFromWindow(renderer, cursorX, cursorY, &cursorX, &cursorY)) {
+        SDL_Log("ERROR: %s", SDL_GetError());
+    }
+    // For the rectangle that flashes during the loading sequence
+    // ==========================================================
+    // Size: 20x20
+    //
+    // X position:
+    // 240 / 2 = 120
+    // 120 - 10 = 110
+    //
+    // Y position:
+    // 160 * (3/4) = 120
+    // 120 - 10 = 110
+    SDL_FRect loadRect {110., 110., 20., 20.};
+    // SDL_FRect loadRect {cursorX - 10.f, cursorY - 10.f, 20., 20.};
+    if (gameState == GameState::Loading) {
+        SDL_RenderClear(renderer);
+        // SDL_GetTicks() returns ms since program start
+        // 500 ms is half a second
+        // Maximum of any int % 500 is 499.
+        // 499 >> 1 = 249
+        // 255 - 249 = 6
+        uint8_t shade = (uint8_t)((SDL_GetTicks() % 500) >> 1) + 6;
+        SDL_SetRenderDrawColor(renderer, shade, shade, shade, 255);
+        SDL_RenderFillRect(renderer, &loadRect);
+    }
+    // SDL_RenderTexture(renderer, backgroundTexture, nullptr, nullptr);
     SDL_RenderPresent(renderer);
     return SDL_APP_CONTINUE;  /* carry on with the program! */
 }
 
 /* This function runs once at shutdown. */
-void SDL_AppQuit(void *appstate, SDL_AppResult result)
+void SDL_AppQuit(void* appstate, SDL_AppResult result)
 {
     /* SDL will clean up the window/renderer for us. */
 }

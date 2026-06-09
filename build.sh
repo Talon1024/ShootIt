@@ -7,7 +7,9 @@ fi
 
 rm -rf build webuild
 
-cmake -B build . && cmake --build build --parallel $(nproc)
+./generate_assets_h.sh
+
+cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=1 . && cmake --build build --parallel $(nproc)
 ln -sr assets build/assets
 
 if [[ -z $EMSDK ]]; then
