@@ -13,10 +13,13 @@
 #define VIEW_HEIGHT 160
 
 /* We will use this renderer to draw into this window every frame. */
-static SDL_Window *window = NULL;
-static SDL_Renderer *renderer = NULL;
+static SDL_Window *window = nullptr;
+static SDL_Renderer *renderer = nullptr;
+
+static SDL_Texture* backgroundTexture = nullptr;
 
 uint32_t getPrimaryDisplay();
+SDL_Texture* loadAsset(SDL_Renderer* renderer, const char* fname);
 
 /* This function runs once at startup. */
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
@@ -45,6 +48,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
     SDL_SetRenderLogicalPresentation(renderer, VIEW_WIDTH, VIEW_HEIGHT, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    SDL_SetDefaultTextureScaleMode(renderer, SDL_SCALEMODE_PIXELART);
+
+    // Load the assets
+    backgroundTexture = loadAsset(renderer, "assets/bg.png");
+    if (!backgroundTexture) {
+        SDL_Log("Unable to load background texture.");
+        return SDL_APP_FAILURE;
+    }
 
     return SDL_APP_CONTINUE;  /* carry on with the program! */
 }
@@ -58,6 +69,17 @@ uint32_t getPrimaryDisplay() {
     }
     SDL_free(displays);
     return primaryDisplayId;
+}
+
+SDL_Texture* loadAsset(SDL_Renderer* renderer, const char* fname) {
+    char* png_path;
+    SDL_asprintf(&png_path, "%s/%s", SDL_GetBasePath(), fname);
+    SDL_Surface* surf = SDL_LoadPNG(png_path);
+    if (!surf) { return nullptr; }
+    SDL_Texture* tex = SDL_CreateTextureFromSurface(renderer, surf);
+    SDL_DestroySurface(surf);
+    if (!tex) { return nullptr; }
+    return tex;
 }
 
 /* This function runs when a new event (mouse input, keypresses, etc) occurs. */
@@ -77,7 +99,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     if (!SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)) {
         SDL_Log("Could not set clear colour");
     }
-    SDL_RenderClear(renderer);
+    SDL_FRect rect;
+    SDL_RenderTexture(renderer, backgroundTexture, nullptr, nullptr);
     SDL_RenderPresent(renderer);
     return SDL_APP_CONTINUE;  /* carry on with the program! */
 }
