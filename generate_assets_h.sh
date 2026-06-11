@@ -1,17 +1,18 @@
 #!/usr/bin/env zsh
 
-great_great_assets=(assets/**/*.png(.))  # P.S. I don't play Lethal Company ;P
-
-# struct PendingExternalAsset {
-#     const char* fname;
-#     SDL_AsyncIOOutcome outcome;
-# };
+gfx=(assets/gfx/*.png(.))
+fontchars=(assets/minifont/*.png(.))
+total_asset_count=$((${#gfx}+${#fontchars}))
 
 cat<<ASSET_HEADER>src/assets.h
-#define ASSET_COUNT ${#great_great_assets}
-static SDL_Texture* textures[ASSET_COUNT];
-static const char* assets[ASSET_COUNT] = {
-$(print ${(F)great_great_assets[@]} | sed -E 's@^(.+)$@    "\1",@g')
+#define TOTAL_ASSET_COUNT ${total_asset_count}
+static SDL_Texture* textures[TOTAL_ASSET_COUNT];
+static const char* assets[TOTAL_ASSET_COUNT] = {
+$(print ${(F)gfx[@]} | sed -E 's@^(.+)$@    "\1",@g')
+$(print ${(F)fontchars[@]} | sed -E 's@^(.+)$@    "\1",@g')
+};
+static const size_t char_to_asset[256] = {
+$(for byte in {0..255}; do printf -v fname assets/minifont/%04X.png ${byte}; if [[ -f ${fname} ]] { print -n "$((${#gfx}+${fontchars[(i)${fname}]}-1))" } else { print -n '0' }; print ','; done)
 };
 ASSET_HEADER
 # $(print ${(F)great_great_assets[@]} | sed -E 's@^(.+)$@    {"\1", {}},@g')

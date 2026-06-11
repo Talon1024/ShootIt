@@ -14,7 +14,7 @@
 
 enum class GameState {
     Loading,
-    LoadFail,
+    // LoadFail,
     Play, // or LoadSuccess
     YouWin, // needed?
     GameOver,
@@ -25,6 +25,7 @@ static SDL_Window* window = nullptr;
 static SDL_Renderer* renderer = nullptr;
 static SDL_AsyncIOQueue* queue = nullptr;
 static GameState gameState = GameState::Loading;
+static uint32_t assetsLoaded = 0;
 
 struct PendingExternalAsset {
     const char* fname;
@@ -35,7 +36,7 @@ struct PendingExternalAsset {
 
 uint32_t getPrimaryDisplay();
 SDL_Texture* loadAsset(SDL_Renderer* renderer, const char* fname);
-bool loadAssetAsync(const char* asset);
+bool loadAssetAsync(const char* asset, uint32_t index);
 
 /* This function runs once at startup. */
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
@@ -73,9 +74,12 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
         return SDL_APP_FAILURE;
     }
 
-    for (const char* asset : assets) {
-        if (!loadAssetAsync(asset)) {
-            return SDL_APP_FAILURE;
+    {
+        uint32_t assetIndex = 0;
+        for (const char* asset : assets) {
+            if (!loadAssetAsync(asset, assetIndex++)) {
+                return SDL_APP_FAILURE;
+            }
         }
     }
 
@@ -105,10 +109,10 @@ SDL_Texture* loadAsset(SDL_Renderer* renderer, const char* fname) {
     return tex;
 }
 
-bool loadAssetAsync(const char* asset) {
+bool loadAssetAsync(const char* asset, uint32_t index) {
     char* fullpath;
     SDL_asprintf(&fullpath, "%s/%s", SDL_GetBasePath(), asset);
-    bool result = SDL_LoadFileAsync(fullpath, queue, nullptr);
+    bool result = SDL_LoadFileAsync(fullpath, queue, new uint32_t {index});
     if (!result) {
         SDL_Log("Unable to load asset %s: %s", asset, SDL_GetError());
     }
@@ -137,7 +141,30 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     SDL_AsyncIOOutcome outcome;
 
     if (SDL_GetAsyncIOResult(queue, &outcome)) {
-        //  
+        uint32_t assetIndex = *(uint32_t*)outcome.userdata;
+        if (outcome.result == SDL_ASYNCIO_COMPLETE) {
+            delete (uint32_t*) outcome.userdata;
+            SDL_Surface* surf = SDL_LoadPNG_IO(SDL_IOFromConstMem(
+                outcome.buffer, (size_t) outcome.bytes_transferred
+            ), true);
+            if (surf) {
+                textures[assetIndex] = SDL_CreateTextureFromSurface(renderer, surf);
+                if (!textures[assetIndex]) {
+                    SDL_Log("Couldn't create texture! %s", SDL_GetError());
+                    return SDL_APP_FAILURE;
+                }
+                SDL_DestroySurface(surf);
+            }
+            SDL_free(outcome.buffer);
+            assetsLoaded++;
+        } else if (outcome.result == SDL_ASYNCIO_FAILURE) {
+            SDL_Log("Could not load asset %s: %s", assets[assetIndex], SDL_GetError());
+            return SDL_APP_FAILURE;
+        }
+        if (assetsLoaded == TOTAL_ASSET_COUNT) {
+            // finished loading!
+            gameState = GameState::Play;
+        }
     }
 
     float cursorX, cursorY;
@@ -157,17 +184,28 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     // 160 * (3/4) = 120
     // 120 - 10 = 110
     SDL_FRect loadRect {110., 110., 20., 20.};
+    uint8_t shade = 0;
     // SDL_FRect loadRect {cursorX - 10.f, cursorY - 10.f, 20., 20.};
-    if (gameState == GameState::Loading) {
+    switch (gameState) {
+    case GameState::Loading:
         SDL_RenderClear(renderer);
         // SDL_GetTicks() returns ms since program start
         // 500 ms is half a second
         // Maximum of any int % 500 is 499.
         // 499 >> 1 = 249
         // 255 - 249 = 6
-        uint8_t shade = (uint8_t)((SDL_GetTicks() % 500) >> 1) + 6;
+        shade = (uint8_t)((SDL_GetTicks() % 500) >> 1) + 6;
         SDL_SetRenderDrawColor(renderer, shade, shade, shade, 255);
         SDL_RenderFillRect(renderer, &loadRect);
+        break;
+    case GameState::Play:
+        SDL_SetRenderDrawColor(renderer, 0, 180, 0, 255);
+        SDL_RenderFillRect(renderer, &loadRect);
+        break;
+    case GameState::YouWin:
+        break;
+    case GameState::GameOver:
+        break;
     }
     // SDL_RenderTexture(renderer, backgroundTexture, nullptr, nullptr);
     SDL_RenderPresent(renderer);
