@@ -1,7 +1,7 @@
 /*
  * Shoot It (c) Talon1024 2026-present
  *
- * GPLv2 License
+ * GPLv3 License
  */
 
 #define SDL_MAIN_USE_CALLBACKS 1  /* use the callbacks instead of main() */
