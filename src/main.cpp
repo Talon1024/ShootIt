@@ -14,10 +14,13 @@
 
 enum class GameState {
     Loading,
-    // LoadFail,
+    LoadFail,
+    PostLoadFail, // So that one frame can be displayed, and then the "game" stops.
     Play, // or LoadSuccess
-    YouWin, // needed?
-    GameOver,
+    YouWin,
+    PostYouWin,
+    GameOver, // or YouLose
+    PostGameOver,
 };
 
 /* We will use this renderer to draw into this window every frame. */
@@ -195,17 +198,31 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         // 499 >> 1 = 249
         // 255 - 249 = 6
         shade = (uint8_t)((SDL_GetTicks() % 500) >> 1) + 6;
+        // Assets (like font characters) are not loaded yet, so just show a
+        // rectangle as a placeholder.
         SDL_SetRenderDrawColor(renderer, shade, shade, shade, 255);
         SDL_RenderFillRect(renderer, &loadRect);
         break;
+    case GameState::LoadFail:
+        SDL_SetRenderDrawColor(renderer, 180, 0, 0, 255);
+        SDL_RenderFillRect(renderer, &loadRect);
+        gameState = GameState::PostLoadFail;
+        break;
+    case GameState::PostLoadFail:
+        return SDL_APP_FAILURE;
     case GameState::Play:
         SDL_SetRenderDrawColor(renderer, 0, 180, 0, 255);
         SDL_RenderFillRect(renderer, &loadRect);
         break;
     case GameState::YouWin:
+        gameState = GameState::PostYouWin;
         break;
+    case GameState::PostYouWin:
+        return SDL_APP_SUCCESS;
     case GameState::GameOver:
         break;
+    case GameState::PostGameOver:
+        return SDL_APP_SUCCESS;
     }
     // SDL_RenderTexture(renderer, backgroundTexture, nullptr, nullptr);
     SDL_RenderPresent(renderer);
