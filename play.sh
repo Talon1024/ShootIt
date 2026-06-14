@@ -1,20 +1,15 @@
 #!/usr/bin/env zsh
 
-brwoser=0
+brwoser=1
 
-if [[ $1 == --web ]]; then
-    brwoser=1
+if [[ $1 == --native ]]; then
+    brwoser=0
     shift
 fi
 
 if ((brwoser)); then
-    if [[ $SHLVL -gt 2 ]]; then
-        print "Please source this so that jobs can be controlled properly."
-        exit 1
-    fi
-    cd webuild
-    python3 -m http.server 3000 &
-    xdg-open http://localhost:3000/Game.html
+    cd wbuild
+    python3 -m http.server 3000
     cd ..
 else
     if [[ $CONTAINER_ID != steamrt4 ]]; then

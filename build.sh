@@ -5,22 +5,31 @@ if [[ $CONTAINER_ID != steamrt4 ]]; then
     exit 0
 fi
 
-rm -rf build webuild
+native=0
+
+if [[ $1 == --native ]]; then
+    native=1
+    shift
+fi
+
+rm -rf nbuild wbuild
 
 ./generate_assets_h.sh
 
-cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=1 . && cmake --build build --parallel $(nproc)
-ln -sr assets build/assets
+if ((native)); then
+    cmake -B nbuild -DCMAKE_EXPORT_COMPILE_COMMANDS=1 . && \
+        cmake --build nbuild --parallel $(nproc)
+    ln -sr assets nbuild/assets
+fi
 
 if [[ -z $EMSDK ]]; then
     source ~/misc/emsdk/emsdk_env.sh
 fi
 
-emcmake cmake -B webuild . && \
-    cd webuild && \
+emcmake cmake -B wbuild . && \
+    cd wbuild && \
     emmake make "-j$(nproc)" && \
-    cp ../assets/favicon.ico . && \
-    ln -sr ../assets assets
+    cp ../assets/favicon.ico .
 
 # TODO: Get this working if possible.
-# emcmake cmake -B webuild . -GNinja && emcmake cmake --build webuild --parallel $(nproc)
+# emcmake cmake -B wbuild . -GNinja && emcmake cmake --build wbuild --parallel $(nproc)

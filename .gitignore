@@ -1,4 +1,4 @@
-/build
-/webuild
+/nbuild
+/wbuild
 src/assets.h
 *.idx
