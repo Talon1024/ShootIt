@@ -19,6 +19,7 @@ if(EMSCRIPTEN)
         # The Makefile is usually in the "webuild" directory.
         target_link_options(Game PRIVATE "SHELL:--embed-file ${PROJECT_SOURCE_DIR}/${asset}@${asset}")
     endforeach()
+    set_property(TARGET Game PROPERTY OUTPUT_NAME index)
     set_property(TARGET Game PROPERTY SUFFIX ".html")
     target_link_options(Game PRIVATE -sALLOW_MEMORY_GROWTH=1)
 endif()

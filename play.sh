@@ -9,7 +9,9 @@ fi
 
 if ((brwoser)); then
     cd wbuild
-    python3 -m http.server 3000
+    # python3 -m http.server 3000
+    source ~/misc/emsdk/emsdk_env.sh
+    emrun index.html
     cd ..
 else
     if [[ $CONTAINER_ID != steamrt4 ]]; then
