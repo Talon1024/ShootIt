@@ -16,7 +16,9 @@ if(EMSCRIPTEN)
     file(GLOB_RECURSE ASSETS LIST_DIRECTORIES false RELATIVE ${PROJECT_SOURCE_DIR} assets/*.png)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --use-port=sdl3")
     foreach(asset IN LISTS ASSETS)
-        # The Makefile is usually in the "webuild" directory.
+        # The alias needs to be set because the assets are stored outside of
+        # the build directory. The alias is the path from the project root to
+        # the file.
         target_link_options(Game PRIVATE "SHELL:--embed-file ${PROJECT_SOURCE_DIR}/${asset}@${asset}")
     endforeach()
     set_property(TARGET Game PROPERTY OUTPUT_NAME index)
