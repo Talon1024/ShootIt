@@ -1,8 +1,10 @@
 #!/usr/bin/env zsh
 
+retv=0
+
 if [[ $CONTAINER_ID != steamrt4 ]]; then
     distrobox enter steamrt4 -- $0 $@; distrobox stop -Y steamrt4
-    exit 0
+    exit ${retv:-0}
 fi
 
 native=0
@@ -19,6 +21,7 @@ rm -rf nbuild wbuild
 if ((native)); then
     cmake -B nbuild -DCMAKE_EXPORT_COMPILE_COMMANDS=1 . && \
         cmake --build nbuild --parallel $(nproc)
+    retv=$?
     ln -sr assets nbuild/assets
 fi
 
@@ -30,6 +33,8 @@ emcmake cmake -B wbuild . && \
     cd wbuild && \
     emmake make "-j$(nproc)" && \
     cp ../assets/favicon.ico .
+retv=$?
 
 # TODO: Get this working if possible.
 # emcmake cmake -B wbuild . -GNinja && emcmake cmake --build wbuild --parallel $(nproc)
+return $retv
