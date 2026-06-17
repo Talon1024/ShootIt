@@ -35,6 +35,7 @@ enum class LoadState {
 };
 
 enum class GameState {
+    Loading,
     WaitingToStart,
     Play,
     Paused, // Needed?

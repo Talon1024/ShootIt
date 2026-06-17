@@ -252,7 +252,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     // within the scope of this function.
     static uint32_t assetsLoaded = 0;
     static LoadState loadState = LoadState::Loading;
-    static GameState gameState = GameState::WaitingToStart;
+    static GameState gameState = GameState::Loading;
     static float gameDifficulty = -1.0; // Negative = uninitialized.
     static RasterFont font;
 
@@ -306,54 +306,56 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     // 120 - 10 = 110
     SDL_FRect loadRect {110., 110., 20., 20.};
     uint8_t shade;
-    switch (loadState) {
-    case LoadState::Loading:
-        SDL_RenderClear(renderer);
-        // SDL_GetTicks() returns ms since program start
-        // 500 ms is half a second
-        // Maximum of any int % 500 is 499.
-        // 499 >> 1 = 249
-        // 255 - 249 = 6
-        shade = (uint8_t)((SDL_GetTicks() % 500) >> 1) + 6;
-        // Assets (like font characters) are not loaded yet, so just show a
-        // square as a placeholder.
-        SDL_SetRenderDrawColor(renderer, shade, shade, shade, 255);
-        SDL_RenderFillRect(renderer, &loadRect);
+    switch (gameState) {
+    case GameState::Play:
+        SDL_RenderTexture(renderer, textures[0], nullptr, nullptr);
+        font.drawText("Shoot!", 90, 77);
         break;
-    case LoadState::Failure:
-        SDL_RenderClear(renderer);
-        // Red square
-        SDL_SetRenderDrawColor(renderer, 180, 0, 0, 255);
-        SDL_RenderFillRect(renderer, &loadRect);
+    case GameState::Win:
+        signalDone(true);
         break;
-    case LoadState::Success:
-        signalReady(gameDifficulty);
-        SDL_SetRenderDrawColor(renderer, 0, 180, 0, 255);
-        SDL_RenderFillRect(renderer, &loadRect);
-        loadState = LoadState::PostSuccess;
+    case GameState::Loss:
+        signalDone(false);
         break;
-    case LoadState::PostSuccess:
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        switch (gameState) {
-        case GameState::WaitingToStart:
-            SDL_RenderTexture(renderer, textures[0], nullptr, nullptr);
-            font.drawText("Get Ready...", 90, 77);
+    case GameState::Paused:
+        // Draw everything drawn in the 'play' state, and then "Paused" on top.
+        break;
+    case GameState::Loading:
+        switch (loadState) {
+        case LoadState::Loading:
+            SDL_RenderClear(renderer);
+            // SDL_GetTicks() returns ms since program start
+            // 500 ms is half a second
+            // Maximum of any int % 500 is 499.
+            // 499 >> 1 = 249
+            // 255 - 249 = 6
+            shade = (uint8_t)((SDL_GetTicks() % 500) >> 1) + 6;
+            // Assets (like font characters) are not loaded yet, so just show a
+            // square as a placeholder.
+            SDL_SetRenderDrawColor(renderer, shade, shade, shade, 255);
+            SDL_RenderFillRect(renderer, &loadRect);
             break;
-        case GameState::Play:
-            SDL_RenderTexture(renderer, textures[0], nullptr, nullptr);
-            font.drawText("Shoot!", 90, 77);
+        case LoadState::Failure:
+            SDL_RenderClear(renderer);
+            // Red square
+            SDL_SetRenderDrawColor(renderer, 180, 0, 0, 255);
+            SDL_RenderFillRect(renderer, &loadRect);
             break;
-        case GameState::Win:
-            signalDone(true);
+        case LoadState::Success:
+            signalReady(gameDifficulty);
+            SDL_SetRenderDrawColor(renderer, 0, 180, 0, 255);
+            SDL_RenderFillRect(renderer, &loadRect);
+            loadState = LoadState::PostSuccess;
             break;
-        case GameState::Loss:
-            signalDone(false);
-            break;
-        case GameState::Paused:
-            // Draw everything drawn in the 'play' state, and then "Paused" on
-            // top.
+        case LoadState::PostSuccess:
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            gameState = GameState::WaitingToStart;
             break;
         }
+        break;
+    case GameState::WaitingToStart:
+        SDL_RenderTexture(renderer, textures[0], nullptr, nullptr);
+        font.drawText("Get Ready...", 90, 77);
         break;
     }
     // SDL_RenderTexture(renderer, backgroundTexture, nullptr, nullptr);
