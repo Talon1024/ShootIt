@@ -10,7 +10,15 @@
       textarea.emscripten { font-family: monospace; width: 80%; }
       div.emscripten { text-align: center; }
       /* the canvas *must not* have any border or padding, or mouse coords will be wrong */
-      canvas.emscripten { border: 0px none; background-color: black; }
+      canvas.emscripten { border: 0 none; background-color: black; }
+
+      .emscripten_container {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        border: 0 none;
+      }
 
       .spinner {
         height: 50px;

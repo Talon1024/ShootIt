@@ -25,6 +25,7 @@ if(EMSCRIPTEN)
     set_property(TARGET Game PROPERTY SUFFIX ".html")
     target_link_options(Game PRIVATE -sALLOW_MEMORY_GROWTH=1)
     target_link_options(Game PRIVATE "SHELL:--shell-file ${PROJECT_SOURCE_DIR}/wsrc/shell.html")
+    target_link_options(Game PRIVATE "SHELL:--emrun")
 endif()
 
 # configure_file(TutorialConfig.h.in TutorialConfig.h)

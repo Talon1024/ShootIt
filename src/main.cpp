@@ -51,7 +51,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
         SDL_Log("Could not get primary display size.");
     }
 
-    if (!SDL_CreateWindowAndRenderer("Shoot It!", screenRect.w, screenRect.h, SDL_WINDOW_RESIZABLE, &window, &renderer)) {
+    if (!SDL_CreateWindowAndRenderer("Shoot It!", screenRect.w, screenRect.h, SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED, &window, &renderer)) {
         SDL_Log("Couldn't create window/renderer: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
@@ -119,6 +119,45 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
     if (event->type == SDL_EVENT_QUIT) {
         return SDL_APP_SUCCESS; // end the program, reporting success to the OS.
     }
+#ifdef EVENT_LOG
+    else if (event->type >= SDL_EVENT_WINDOW_FIRST && event-> type <= SDL_EVENT_WINDOW_LAST) {
+        static const char* eventNames[] = {
+                "SDL_EVENT_WINDOW_SHOWN",     /**< Window has been shown */
+                "SDL_EVENT_WINDOW_HIDDEN",            /**< Window has been hidden */
+                "SDL_EVENT_WINDOW_EXPOSED",           /**< Window has been exposed and should be redrawn, and can be redrawn directly from event watchers for this event.
+                                                        data1 is 1 for live-resize expose events, 0 otherwise. */
+                "SDL_EVENT_WINDOW_MOVED",             /**< Window has been moved to data1, data2 */
+                "SDL_EVENT_WINDOW_RESIZED",           /**< Window has been resized to data1xdata2 */
+                "SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED",/**< The pixel size of the window has changed to data1xdata2 */
+                "SDL_EVENT_WINDOW_METAL_VIEW_RESIZED",/**< The pixel size of a Metal view associated with the window has changed */
+                "SDL_EVENT_WINDOW_MINIMIZED",         /**< Window has been minimized */
+                "SDL_EVENT_WINDOW_MAXIMIZED",         /**< Window has been maximized */
+                "SDL_EVENT_WINDOW_RESTORED",          /**< Window has been restored to normal size and position */
+                "SDL_EVENT_WINDOW_MOUSE_ENTER",       /**< Window has gained mouse focus */
+                "SDL_EVENT_WINDOW_MOUSE_LEAVE",       /**< Window has lost mouse focus */
+                "SDL_EVENT_WINDOW_FOCUS_GAINED",      /**< Window has gained keyboard focus */
+                "SDL_EVENT_WINDOW_FOCUS_LOST",        /**< Window has lost keyboard focus */
+                "SDL_EVENT_WINDOW_CLOSE_REQUESTED",   /**< The window manager requests that the window be closed */
+                "SDL_EVENT_WINDOW_HIT_TEST",          /**< Window had a hit test that wasn't SDL_HITTEST_NORMAL */
+                "SDL_EVENT_WINDOW_ICCPROF_CHANGED",   /**< The window's ICC profile has changed */
+                "SDL_EVENT_WINDOW_DISPLAY_CHANGED",   /**< Window has been moved to display data1 */
+                "SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED", /**< Window display scale has been changed */
+                "SDL_EVENT_WINDOW_SAFE_AREA_CHANGED", /**< The window safe area has been changed */
+                "SDL_EVENT_WINDOW_OCCLUDED",          /**< The window has been occluded */
+                "SDL_EVENT_WINDOW_ENTER_FULLSCREEN",  /**< The window has entered fullscreen mode */
+                "SDL_EVENT_WINDOW_LEAVE_FULLSCREEN",  /**< The window has left fullscreen mode */
+                "SDL_EVENT_WINDOW_DESTROYED",         /**< The window with the associated ID is being or has been destroyed. If this message is being handled
+                                                        in an event watcher, the window handle is still valid and can still be used to retrieve any properties
+                                                        associated with the window. Otherwise, the handle has already been destroyed and all resources
+                                                        associated with it are invalid */
+                "SDL_EVENT_WINDOW_HDR_STATE_CHANGED", /**< Window HDR properties have changed */
+                "SDL_EVENT_WINDOW_SETTINGS_CHANGED",  /**< Window settings have changed (on visionOS) */
+        };
+        SDL_Log("Received event of type %s", eventNames[event->type - SDL_EVENT_WINDOW_FIRST]);
+    } else {
+        SDL_Log("Received event of type %#4x", event->type);
+    }
+#endif
     return SDL_APP_CONTINUE;  /* carry on with the program! */
 }
 
