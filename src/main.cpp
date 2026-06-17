@@ -39,8 +39,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
         return SDL_APP_FAILURE;
     }
 
+    SDL_Rect screenRect {0, 0, VIEW_WIDTH, VIEW_HEIGHT};
+#if not(__EMSCRIPTEN__)
     uint32_t primaryDisplayId = getPrimaryDisplay();
-    SDL_Rect screenRect;
 
     if (primaryDisplayId == 0) {
         SDL_Log("No display found!");
@@ -50,8 +51,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     if (!SDL_GetDisplayBounds(primaryDisplayId, &screenRect)) {
         SDL_Log("Could not get primary display size.");
     }
-
-    if (!SDL_CreateWindowAndRenderer("Shoot It!", screenRect.w, screenRect.h, SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED, &window, &renderer)) {
+#endif
+    if (!SDL_CreateWindowAndRenderer("Shoot It!", screenRect.w, screenRect.h, SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_FILL_DOCUMENT, &window, &renderer)) {
         SDL_Log("Couldn't create window/renderer: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
