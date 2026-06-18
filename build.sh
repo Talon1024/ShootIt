@@ -31,8 +31,7 @@ fi
 
 emcmake cmake -B wbuild . && \
     cd wbuild && \
-    emmake make "-j$(nproc)" && \
-    cp ../assets/favicon.ico .
+    emmake make "-j$(nproc)"
 retv=$?
 
 # TODO: Get this working if possible.

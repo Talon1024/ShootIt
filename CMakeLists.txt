@@ -9,11 +9,11 @@ find_package(SDL3 REQUIRED CONFIG REQUIRED COMPONENTS SDL3-shared)
 
 add_executable(Game)
 
-target_sources(Game PRIVATE ${SOURCE_DIR}/main.cpp)
+target_sources(Game PRIVATE ${SOURCE_DIR}/main.cpp ${SOURCE_DIR}/game.cpp)
 target_link_libraries(Game ${SDL3_LIBRARIES})
 
+file(GLOB_RECURSE ASSETS LIST_DIRECTORIES false RELATIVE ${PROJECT_SOURCE_DIR} assets/*.png)
 if(EMSCRIPTEN)
-    file(GLOB_RECURSE ASSETS LIST_DIRECTORIES false RELATIVE ${PROJECT_SOURCE_DIR} assets/*.png)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --use-port=sdl3")
     foreach(asset IN LISTS ASSETS)
         # The alias needs to be set because the assets are stored outside of
@@ -26,6 +26,7 @@ if(EMSCRIPTEN)
     target_link_options(Game PRIVATE -sALLOW_MEMORY_GROWTH=1)
     target_link_options(Game PRIVATE "SHELL:--shell-file ${PROJECT_SOURCE_DIR}/wsrc/shell.html")
     target_link_options(Game PRIVATE "SHELL:--emrun")
+    file(COPY assets/favicon.ico DESTINATION ${PROJECT_BINARY_DIR})
 endif()
 
 # configure_file(TutorialConfig.h.in TutorialConfig.h)
