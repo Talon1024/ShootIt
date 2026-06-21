@@ -136,14 +136,14 @@ int32_t getPNGYOffset(void* bufdata, size_t bufsize) {
     }
     size_t grabHaystackSize = idatStart - (char*) bufdata;
     // grAb comes before IDAT
-    char* grabStart = (char*) memmem(
+    int32_t* grabStart = (int32_t*) memmem(
         bufdata, grabHaystackSize,
         "grAb", 4
     );
     if (!grabStart) {
         return 0;
     }
-    int32_t* offsets = (int32_t*) grabStart + 1;
+    int32_t* offsets = grabStart + 1;
     int32_t offsetX = SDL_Swap32BE(*offsets);
     int32_t offsetY = SDL_Swap32BE(*(offsets+1));
     return -offsetY; // negative Y offset = down
