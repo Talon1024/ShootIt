@@ -187,23 +187,17 @@ bool RasterFont::assignAsset(uint32_t assetIndex, const SDL_AsyncIOOutcome& outc
     return true;
 }
 
-EM_JS(void, signalReady, (float& difficulty), {
+EM_JS(void, signalReady, (), {
     window.parent.postMessage({op: "ready"});
-    window.addEventListener("message", ev => {
-        console.log(ev.data);
-        if (difficulty in ev) {
-            difficulty = ev.difficulty;
-        }
-    });
 });
 
-EM_JS(void, signalStart, () {
+EM_JS(void, signalStart, (), {
     window.parent.postMessage({op: "started", verb: "Shoot!"});
 });
 
-EM_JS(void, signalDone, (bool won), {
+EM_JS(void, signalDone, (int32_t won), {
     window.parent.postMessage({op: "done", win: won});
-})
+});
 
 inline bool isPNG(void* data) {
     // Check for PNG signature
@@ -284,13 +278,15 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     // 120 - 10 = 110
     SDL_FRect loadRect {110., 110., 20., 20.};
     uint8_t shade;
+    static bool drawn = false;
     static uint64_t lastTickTime = 0;
     switch (gameState) {
     case GameState::Play:
-        SDL_RenderTexture(renderer, textures[0], nullptr, nullptr);
         // ========== Ticker ==========
         if ((SDL_GetTicks() - lastTickTime) > GAME_TICK_TIME_MS) {
-            //
+            SDL_RenderTexture(renderer, textures[0], nullptr, nullptr); // bg
+            // render game stuff
+            SDL_RenderPresent(renderer);
             lastTickTime = SDL_GetTicks();
         }
         // ========== End ticker ==========
@@ -313,22 +309,25 @@ SDL_AppResult SDL_AppIterate(void* appstate)
             // Maximum of any int % 500 is 499.
             // 499 >> 1 = 249
             // 255 - 249 = 6
-            shade = (uint8_t)((SDL_GetTicks() % 500) >> 1) + 6;
+            shade = (uint8_t)((SDL_GetTicks() & 511) >> 1);
             // Assets (like font characters) are not loaded yet, so just show a
             // square as a placeholder.
             SDL_SetRenderDrawColor(renderer, shade, shade, shade, 255);
             SDL_RenderFillRect(renderer, &loadRect);
+            SDL_RenderPresent(renderer);
             break;
         case LoadState::Failure:
             SDL_RenderClear(renderer);
             // Red square
             SDL_SetRenderDrawColor(renderer, 180, 0, 0, 255);
             SDL_RenderFillRect(renderer, &loadRect);
-            break;
+            SDL_RenderPresent(renderer);
+            return SDL_APP_FAILURE;
         case LoadState::Success:
-            signalReady(gameDifficulty);
+            signalReady();
             SDL_SetRenderDrawColor(renderer, 0, 180, 0, 255);
             SDL_RenderFillRect(renderer, &loadRect);
+            SDL_RenderPresent(renderer);
             loadState = LoadState::PostSuccess;
             break;
         case LoadState::PostSuccess:
@@ -338,12 +337,17 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         }
         break;
     case GameState::WaitingToStart:
-        SDL_RenderTexture(renderer, textures[0], nullptr, nullptr);
-        font.drawText("Get Ready...", 90, 77);
+        if (!drawn) {
+            SDL_RenderClear(renderer);
+            SDL_RenderTexture(renderer, textures[0], nullptr, nullptr);
+            font.drawText("Get Ready...", 90, 77);
+            SDL_RenderPresent(renderer);
+            drawn = true;
+        }
         break;
     }
     // SDL_RenderTexture(renderer, backgroundTexture, nullptr, nullptr);
-    SDL_RenderPresent(renderer);
+    // SDL_RenderPresent(renderer);
     return SDL_APP_CONTINUE;  /* carry on with the program! */
 }
 
