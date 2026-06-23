@@ -43,12 +43,7 @@ enum class GameState {
     Loss,
 };
 
-/* We will use this renderer to draw into this window every frame. */
-static SDL_Window* window = nullptr;
-SDL_Renderer* renderer = nullptr;
-static SDL_AsyncIOQueue* queue = nullptr;
-
-// 20 FPS
+// 60+ FPS
 #define GAME_TICK_TIME_MS 15
 
 // Data for a raster font
@@ -60,9 +55,10 @@ private:
         float height;
         float yoffset;
     } charInfo[256];
+    // char name[16];  // For multiple font support
 public:
     RasterFont() : charInfo{}{}
-    void drawText(const char* text, float x, float y);
+    void drawText(const char* text, float x, float y) const;
     bool assignAsset(uint32_t assetIndex, const SDL_AsyncIOOutcome& outcome);
 };
 

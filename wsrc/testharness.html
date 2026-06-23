@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>My harness</title>
+</head>
+<body>
+<main>
+<h1>GAME TIME</h1>
+<h3 id="verb">...</h3>
+<iframe title="Game" width="1280" height="720" src="/index.html" id="game-frame"></iframe>
+<p><label for="difficulty">Difficulty: <input id="difficulty" type="number" min="1" max="100" value="1" disabled></label><button id="start" type="button" disabled>Start!</button></p>
+</main>
+<script type="text/javascript">
+
+window.addEventListener("load", () => {
+
+    const difficultyInput = document.getElementById("difficulty");
+    const verbDisplay = document.getElementById("verb");
+    const startButton = document.getElementById("start");
+    const gameFrame = document.getElementById("game-frame");
+
+    startButton.addEventListener("mouseup", () => {
+        const difficulty = parseInt(difficultyInput.value, 10);
+        gameFrame.contentWindow.postMessage({op: "start", difficulty: difficulty});
+    });
+
+    window.addEventListener("message", ev => {
+        if ("op" in ev.data) { switch (ev.data.op) {
+            case "ready":
+                difficultyInput.disabled = false;
+                startButton.disabled = false;
+                break;
+            case "started":
+                verbDisplay.innerText = ev.data.verb;
+                break;
+            case "done":
+                verbDisplay.innerText = ev.data.won ? "Win!" : "Lose!";
+                break;
+            }
+        }
+    });
+});
+
+</script>
+</body>
+</html>

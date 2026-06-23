@@ -1,5 +1,6 @@
 #!/usr/bin/env zsh
 
+
 retv=0
 
 if [[ $CONTAINER_ID != steamrt4 ]]; then
@@ -7,6 +8,7 @@ if [[ $CONTAINER_ID != steamrt4 ]]; then
     exit ${retv:-0}
 fi
 
+projectname=${0:A:h:t}
 native=0
 
 if [[ $1 == --native ]]; then
@@ -14,7 +16,7 @@ if [[ $1 == --native ]]; then
     shift
 fi
 
-rm -rf nbuild wbuild
+rm -rf nbuild wbuild ${projectname}.zip
 
 ./generate_assets_h.sh
 
@@ -31,9 +33,14 @@ fi
 
 emcmake cmake -B wbuild . && \
     cd wbuild && \
-    emmake make "-j$(nproc)"
+    emmake make "-j$(nproc)" && \
+    ln -sr ../assets assets && \
+    cd ..
 retv=$?
 
 # TODO: Get this working if possible.
 # emcmake cmake -B wbuild . -GNinja && emcmake cmake --build wbuild --parallel $(nproc)
+
+zip -r ${projectname} wbuild/index.html wbuild/index.js wbuild/index.wasm wbuild/favicon.ico wbuild/assets
+
 return $retv

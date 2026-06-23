@@ -26,9 +26,15 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
+#include <cmath>
 #include <emscripten.h>
 #include "main.h"
 #include "assets.h"
+
+/* We will use this renderer to draw into this window every frame. */
+static SDL_Window* window = nullptr;
+static SDL_Renderer* renderer = nullptr;
+static SDL_AsyncIOQueue* queue = nullptr;
 
 /* This function runs once at startup. */
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
@@ -151,7 +157,7 @@ int32_t getPNGYOffset(void* bufdata, size_t bufsize) {
 
 #define SPACE_WIDTH 5.0
 
-void RasterFont::drawText(const char* text, float x, float y) {
+void RasterFont::drawText(const char* text, float x, float y) const {
     size_t textLength = std::strlen(text);
     SDL_FRect charRect {x, y, 0.0, 0.0};
     for (size_t pos = 0; pos < textLength; pos++) {
@@ -187,8 +193,19 @@ bool RasterFont::assignAsset(uint32_t assetIndex, const SDL_AsyncIOOutcome& outc
     return true;
 }
 
-EM_JS(void, signalReady, (), {
+EM_JS(void, signalReady, (float* pDifficulty, bool* pNewGame), {
     window.parent.postMessage({op: "ready"});
+    window.addEventListener("message", ev => {
+        if ("op" in ev.data) { switch(ev.data.op) {
+            case "start":
+                console.log("Difficulty set to", ev.data.difficulty);
+                setValue(pDifficulty, ev.data.difficulty, "float");
+                setValue(pNewGame, 1, "i8");
+                break;
+                // TODO: more ops?
+            }
+        }
+    });
 });
 
 EM_JS(void, signalStart, (), {
@@ -196,7 +213,7 @@ EM_JS(void, signalStart, (), {
 });
 
 EM_JS(void, signalDone, (int32_t won), {
-    window.parent.postMessage({op: "done", win: won});
+    window.parent.postMessage({op: "done", win: !!won});
 });
 
 inline bool isPNG(void* data) {
@@ -208,24 +225,125 @@ inline bool isPNG(void* data) {
     return false;
 }
 
+// Functions called during various loading/game states
+inline void frameLoading(LoadState& loadState, RasterFont& font);
+inline void frameLoadFail();
+inline void frameLoadSuccess();
+inline void frameWaitingToStart(const RasterFont& font);
+inline void frameGamePlay(const float& mouseX, const float& mouseY);
+
 /* This function runs once per frame, and is the heart of the program.
  SAFETY: The renderer is most likely initialized.
  */
 SDL_AppResult SDL_AppIterate(void* appstate)
 {
-    if (!SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)) {
-        SDL_Log("Could not set clear colour. %s", SDL_GetError());
-    }
-    SDL_MouseButtonFlags mouseButtons;
-    SDL_AsyncIOOutcome outcome;
     // The "static" keyword makes these variables global, but only accessible
     // within the scope of this function.
-    static uint32_t assetsLoaded = 0;
     static LoadState loadState = LoadState::Loading;
     static GameState gameState = GameState::Loading;
-    static float gameDifficulty = -1.0; // Negative = uninitialized.
     static RasterFont font;
+    static bool drawn = false;
+    static bool newGame = false;
+    static float difficulty = 0.0;
+    if (newGame && loadState == LoadState::PostSuccess) {
+        SDL_Log("Starting a new game!");
+        gameState = GameState::Play;
+        signalStart();
+        newGame = false;
+        drawn = false;
+    }
+    static uint32_t gameTick = 0;
+    static uint64_t lastTickTime = 0;
+    float cursorX, cursorY;
+    SDL_MouseButtonFlags mouseButtons = SDL_GetMouseState(&cursorX, &cursorY);
+    SDL_RenderCoordinatesFromWindow(renderer, cursorX, cursorY, &cursorX, &cursorY);
+    cursorX = roundf(cursorX);
+    cursorY = roundf(cursorY);
+    switch (gameState) {
+    case GameState::Play:
+        if ((SDL_GetTicks() - lastTickTime) > GAME_TICK_TIME_MS) {
+            frameGamePlay(cursorX, cursorY);
+            gameTick += 1;
+            lastTickTime = SDL_GetTicks();
+        }
+        break;
+    case GameState::Win:
+        if (!drawn) {
+            signalDone(1);
+            drawn = true;
+        }
+        break;
+    case GameState::Loss:
+        if (!drawn) {
+            signalDone(0);
+            drawn = true;
+        }
+        break;
+    case GameState::Paused:
+        // Draw everything drawn in the 'play' state, and then "Paused" on top.
+        frameGamePlay(cursorX, cursorY);
+        font.drawText("Paused", 80, 80);
+        break;
+    case GameState::Loading:
+        switch (loadState) {
+        case LoadState::Loading:
+            frameLoading(loadState, font);
+            break;
+        case LoadState::Failure:
+            frameLoadFail();
+            return SDL_APP_FAILURE;
+        case LoadState::Success:
+            signalReady(&difficulty, &newGame);
+            frameLoadSuccess();
+            loadState = LoadState::PostSuccess;
+            break;
+        case LoadState::PostSuccess:
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            gameState = GameState::WaitingToStart;
+            break;
+        }
+        break;
+    case GameState::WaitingToStart:
+        if (!drawn) {
+            frameWaitingToStart(font);
+            drawn = true;
+        }
+        break;
+    }
+    return SDL_APP_CONTINUE;  /* carry on with the program! */
+}
 
+inline void frameGamePlay(const float& mouseX, const float& mouseY) {
+    // render game stuff
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_RenderTexture(renderer, textures[ASSET_BG], nullptr, nullptr); // bg
+    // TODO: all the other game stuff
+    SDL_FRect mouseRect {
+        mouseX - 3.0f,
+        mouseY - 3.0f,
+        7.0f, 7.0f
+    };
+    SDL_RenderTexture(renderer, textures[ASSET_X_OHAIR], nullptr, &mouseRect);
+    SDL_RenderPresent(renderer);
+}
+
+// For the rectangle that flashes during the loading sequence
+// ==========================================================
+// Size: 20x20
+//
+// X position:
+// 240 / 2 = 120
+// 120 - 10 = 110
+//
+// Y position:
+// 160 * (3/4) = 120
+// 120 - 10 = 110
+static const SDL_FRect loadRect {110., 110., 20., 20.};
+
+inline void frameLoading(LoadState& loadState, RasterFont& font) {
+    static uint32_t assetsLoaded = 0;
+    SDL_AsyncIOOutcome outcome;
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     if (SDL_GetAsyncIOResult(queue, &outcome)) {
         uint32_t assetIndex = *(uint32_t*)outcome.userdata;
         delete (uint32_t*) outcome.userdata;
@@ -259,96 +377,42 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         }
     }
 
-    float cursorX, cursorY;
-    mouseButtons = SDL_GetMouseState(&cursorX, &cursorY);
-    if (!SDL_RenderCoordinatesFromWindow(
-        renderer, cursorX, cursorY, &cursorX, &cursorY)) {
-        SDL_Log("ERROR: %s", SDL_GetError());
-    }
-    // For the rectangle that flashes during the loading sequence
-    // ==========================================================
-    // Size: 20x20
-    //
-    // X position:
-    // 240 / 2 = 120
-    // 120 - 10 = 110
-    //
-    // Y position:
-    // 160 * (3/4) = 120
-    // 120 - 10 = 110
-    SDL_FRect loadRect {110., 110., 20., 20.};
-    uint8_t shade;
-    static bool drawn = false;
-    static uint64_t lastTickTime = 0;
-    switch (gameState) {
-    case GameState::Play:
-        // ========== Ticker ==========
-        if ((SDL_GetTicks() - lastTickTime) > GAME_TICK_TIME_MS) {
-            SDL_RenderTexture(renderer, textures[0], nullptr, nullptr); // bg
-            // render game stuff
-            SDL_RenderPresent(renderer);
-            lastTickTime = SDL_GetTicks();
-        }
-        // ========== End ticker ==========
-        break;
-    case GameState::Win:
-        signalDone(true);
-        break;
-    case GameState::Loss:
-        signalDone(false);
-        break;
-    case GameState::Paused:
-        // Draw everything drawn in the 'play' state, and then "Paused" on top.
-        break;
-    case GameState::Loading:
-        switch (loadState) {
-        case LoadState::Loading:
-            SDL_RenderClear(renderer);
-            // SDL_GetTicks() returns ms since program start
-            // 500 ms is half a second
-            // Maximum of any int % 500 is 499.
-            // 499 >> 1 = 249
-            // 255 - 249 = 6
-            shade = (uint8_t)((SDL_GetTicks() & 511) >> 1);
-            // Assets (like font characters) are not loaded yet, so just show a
-            // square as a placeholder.
-            SDL_SetRenderDrawColor(renderer, shade, shade, shade, 255);
-            SDL_RenderFillRect(renderer, &loadRect);
-            SDL_RenderPresent(renderer);
-            break;
-        case LoadState::Failure:
-            SDL_RenderClear(renderer);
-            // Red square
-            SDL_SetRenderDrawColor(renderer, 180, 0, 0, 255);
-            SDL_RenderFillRect(renderer, &loadRect);
-            SDL_RenderPresent(renderer);
-            return SDL_APP_FAILURE;
-        case LoadState::Success:
-            signalReady();
-            SDL_SetRenderDrawColor(renderer, 0, 180, 0, 255);
-            SDL_RenderFillRect(renderer, &loadRect);
-            SDL_RenderPresent(renderer);
-            loadState = LoadState::PostSuccess;
-            break;
-        case LoadState::PostSuccess:
-            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-            gameState = GameState::WaitingToStart;
-            break;
-        }
-        break;
-    case GameState::WaitingToStart:
-        if (!drawn) {
-            SDL_RenderClear(renderer);
-            SDL_RenderTexture(renderer, textures[0], nullptr, nullptr);
-            font.drawText("Get Ready...", 90, 77);
-            SDL_RenderPresent(renderer);
-            drawn = true;
-        }
-        break;
-    }
-    // SDL_RenderTexture(renderer, backgroundTexture, nullptr, nullptr);
-    // SDL_RenderPresent(renderer);
-    return SDL_APP_CONTINUE;  /* carry on with the program! */
+    SDL_RenderClear(renderer);
+    // SDL_GetTicks() returns ms since program start
+    // 500 ms is half a second
+    // 511 ms is very close
+    // Number & 511 = number % 511
+    // 511 >> 1 = 255 (the maximum for a u8)
+    uint8_t shade = (uint8_t)((SDL_GetTicks() & 511) >> 1);
+    // Assets (like font characters) are not loaded yet, so just show a
+    // square as a placeholder.
+    SDL_SetRenderDrawColor(renderer, shade, shade, shade, 255);
+    SDL_RenderFillRect(renderer, &loadRect);
+    SDL_RenderPresent(renderer);
+}
+
+inline void frameLoadFail() {
+    SDL_RenderClear(renderer);
+    // Red square
+    SDL_SetRenderDrawColor(renderer, 180, 0, 0, 255);
+    SDL_RenderFillRect(renderer, &loadRect);
+    SDL_RenderPresent(renderer);
+}
+
+inline void frameLoadSuccess() {
+    SDL_RenderClear(renderer);
+    SDL_SetRenderDrawColor(renderer, 0, 180, 0, 255);
+    SDL_RenderFillRect(renderer, &loadRect);
+    SDL_RenderPresent(renderer);
+}
+
+inline void frameWaitingToStart(const RasterFont& font) {
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderClear(renderer);
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_RenderTexture(renderer, textures[ASSET_BG], nullptr, nullptr);
+    font.drawText("Get Ready...", 90, 77);
+    SDL_RenderPresent(renderer);
 }
 
 /* This function runs once at shutdown. */
