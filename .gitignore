@@ -2,3 +2,4 @@
 /wbuild
 src/assets.h
 *.idx
+*.zip
