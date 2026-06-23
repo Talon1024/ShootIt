@@ -43,8 +43,8 @@ enum class GameState {
     Loss,
 };
 
-// 60+ FPS
-#define GAME_TICK_TIME_MS 15
+// 75+ FPS
+#define GAME_TICK_TIME_MS 12
 
 // Data for a raster font
 class RasterFont {

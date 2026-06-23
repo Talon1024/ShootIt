@@ -319,8 +319,8 @@ inline void frameGamePlay(const float& mouseX, const float& mouseY) {
     SDL_RenderTexture(renderer, textures[ASSET_BG], nullptr, nullptr); // bg
     // TODO: all the other game stuff
     SDL_FRect mouseRect {
-        mouseX - 3.0f,
-        mouseY - 3.0f,
+        mouseX - 4.0f,
+        mouseY - 4.0f,
         7.0f, 7.0f
     };
     SDL_RenderTexture(renderer, textures[ASSET_X_OHAIR], nullptr, &mouseRect);
