@@ -56,8 +56,9 @@ private:
         float yoffset;
     } charInfo[256];
     // char name[16];  // For multiple font support
+    SDL_Texture** textures; // I don't think this is a good idea.
 public:
-    RasterFont() : charInfo{}{}
+    RasterFont(SDL_Texture** textures) : charInfo{}, textures(textures) {}
     void drawText(const char* text, float x, float y) const;
     bool assignAsset(uint32_t assetIndex, const SDL_AsyncIOOutcome& outcome);
 };

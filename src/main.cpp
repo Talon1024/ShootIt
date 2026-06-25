@@ -226,11 +226,11 @@ inline bool isPNG(void* data) {
 }
 
 // Functions called during various loading/game states
-inline void frameLoading(LoadState& loadState, RasterFont& font);
+inline void frameLoading(SDL_Texture** textures, LoadState& loadState, RasterFont& font);
 inline void frameLoadFail();
 inline void frameLoadSuccess();
-inline void frameWaitingToStart(const RasterFont& font);
-inline void frameGamePlay(const float& mouseX, const float& mouseY);
+inline void frameWaitingToStart(SDL_Texture** textures, const RasterFont& font);
+inline void frameGamePlay(SDL_Texture** textures, const float& mouseX, const float& mouseY);
 
 /* This function runs once per frame, and is the heart of the program.
  SAFETY: The renderer is most likely initialized.
@@ -239,14 +239,16 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 {
     // The "static" keyword makes these variables global, but only accessible
     // within the scope of this function.
+    static SDL_Texture* textures[TOTAL_ASSET_COUNT] = {};
     static LoadState loadState = LoadState::Loading;
     static GameState gameState = GameState::Loading;
-    static RasterFont font;
+    static RasterFont font(textures);
     static bool drawn = false;
+    static bool paused = false;
     static bool newGame = false;
     static float difficulty = 0.0;
     if (newGame && loadState == LoadState::PostSuccess) {
-        SDL_Log("Starting a new game!");
+        SDL_Log("Starting a new game! (difficulty: %.3f)", difficulty);
         gameState = GameState::Play;
         signalStart();
         newGame = false;
@@ -262,7 +264,8 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     switch (gameState) {
     case GameState::Play:
         if ((SDL_GetTicks() - lastTickTime) > GAME_TICK_TIME_MS) {
-            frameGamePlay(cursorX, cursorY);
+            frameGamePlay(textures, cursorX, cursorY);
+            game
             gameTick += 1;
             lastTickTime = SDL_GetTicks();
         }
@@ -281,13 +284,15 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         break;
     case GameState::Paused:
         // Draw everything drawn in the 'play' state, and then "Paused" on top.
-        frameGamePlay(cursorX, cursorY);
-        font.drawText("Paused", 80, 80);
+        if (!drawn) {
+            frameGamePlay(textures, cursorX, cursorY);
+            font.drawText("Paused", 80, 80);
+        }
         break;
     case GameState::Loading:
         switch (loadState) {
         case LoadState::Loading:
-            frameLoading(loadState, font);
+            frameLoading(textures, loadState, font);
             break;
         case LoadState::Failure:
             frameLoadFail();
@@ -305,7 +310,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         break;
     case GameState::WaitingToStart:
         if (!drawn) {
-            frameWaitingToStart(font);
+            frameWaitingToStart(textures, font);
             drawn = true;
         }
         break;
@@ -313,7 +318,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     return SDL_APP_CONTINUE;  /* carry on with the program! */
 }
 
-inline void frameGamePlay(const float& mouseX, const float& mouseY) {
+inline void frameGamePlay(SDL_Texture** textures, const float& mouseX, const float& mouseY) {
     // render game stuff
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
     SDL_RenderTexture(renderer, textures[ASSET_BG], nullptr, nullptr); // bg
@@ -340,7 +345,10 @@ inline void frameGamePlay(const float& mouseX, const float& mouseY) {
 // 120 - 10 = 110
 static const SDL_FRect loadRect {110., 110., 20., 20.};
 
-inline void frameLoading(LoadState& loadState, RasterFont& font) {
+// "textures" is filled in with the successfully loaded textures
+// "loadState" is filled in with success or failure
+// "font" has assets assigned to bytes as the character images are loaded
+inline void frameLoading(SDL_Texture** textures, LoadState& loadState, RasterFont& font) {
     static uint32_t assetsLoaded = 0;
     SDL_AsyncIOOutcome outcome;
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
@@ -406,7 +414,9 @@ inline void frameLoadSuccess() {
     SDL_RenderPresent(renderer);
 }
 
-inline void frameWaitingToStart(const RasterFont& font) {
+// "textures" is used to reference a texture
+// "font" is used to make it easier to reference font character textures
+inline void frameWaitingToStart(SDL_Texture** textures, const RasterFont& font) {
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
