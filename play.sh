@@ -1,6 +1,7 @@
 #!/usr/bin/env zsh
 
 brwoser=1
+emrun=0
 
 if [[ $1 == --native ]]; then
     brwoser=0
@@ -9,9 +10,8 @@ fi
 
 if ((brwoser)); then
     cd wbuild
-    # python3 -m http.server 3000
     source ~/misc/emsdk/emsdk_env.sh
-    emrun index.html
+    emrun testharness.html
     cd ..
 else
     if [[ $CONTAINER_ID != steamrt4 ]]; then
