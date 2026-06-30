@@ -27,7 +27,7 @@ rm -rf nbuild wbuild ${projectname}.zip
 ./generate_assets_h.sh
 
 if ((native)); then
-    cmake -B nbuild -DCMAKE_EXPORT_COMPILE_COMMANDS=1 "${emrun:+-DEMRUN=1}" . && \
+    cmake -B nbuild -DCMAKE_EXPORT_COMPILE_COMMANDS=1 . && \
         cmake --build nbuild --parallel $(nproc)
     retv=$?
     ln -sr assets nbuild/assets
@@ -37,7 +37,7 @@ if [[ -z $EMSDK ]]; then
     source ~/misc/emsdk/emsdk_env.sh
 fi
 
-emcmake cmake -B wbuild . && \
+emcmake cmake -B wbuild "${emrun:+-DEMRUN=1}" . && \
     cd wbuild && \
     emmake make "-j$(nproc)" && \
     ln -sr ../assets assets && \
