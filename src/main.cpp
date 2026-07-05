@@ -212,7 +212,7 @@ EM_JS(void, signalReady, (float* pDifficulty, bool* pNewGame), {
 });
 
 EM_JS(void, signalStart, (), {
-    window.parent.postMessage({op: "started", verb: "Shoot!"});
+    window.parent.postMessage({op: "started", verb: "Defend!"});
 });
 
 EM_JS(void, signalDone, (int32_t won), {
@@ -472,17 +472,20 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
 
 inline void gameEnemySpawn(GameEnemy& enemy, const SDL_Rect friendRect) {
     // WIP!
-    int32_t x = -3;
+    int32_t x = -15;
     int32_t y = SDL_rand(VIEW_HEIGHT - 16);
-    int32_t speed = SDL_rand(4);
+    // int32_t y = SDL_rand(3) * 80;
+    int32_t speed = SDL_rand(3);
     // Aim for the center of the "friend".
-    int32_t rise = ((friendRect.y + (friendRect.h >> 1)) - y);
-    int32_t run  = ((friendRect.x + (friendRect.w >> 1)) - x);
-    uint16_t speedX = ((uint16_t)SDL_floorf(speed * (1. - SDL_fabsf((float)rise/run))) + 1) & SPEED_VALUE;
-    uint16_t speedY = ((uint16_t)SDL_floorf(SDL_fabsf((float)run/rise)) & SPEED_VALUE);
-    speedY |= (rise > 0) ? REVERSE_DIRECTION : 0;
+    int32_t rise = (friendRect.y + (friendRect.h >> 1)) - y;
+    int32_t run  = (friendRect.x + (friendRect.w >> 1)) - x;
+    rise -= 8; // Offset so that the rectangles touch
+    uint16_t speedX = ((uint16_t)SDL_floorf(speed * (1.f - SDL_fabsf((float)rise/run))) + 1) & SPEED_VALUE;
+    speedX |= (x < 0) ? REVERSE_DIRECTION : 0;
+    uint16_t speedY = rise == 0 ? 0 : (uint16_t)SDL_floorf(SDL_fabsf((float)run/rise)) & SPEED_VALUE;
+    speedY -= speedX - 1;
     speedY |= ONE_PIXEL_PER_X_TICS;
-    SDL_Log("Speed: %hu %hu (%hx %hx)", speedX, speedY, speedX, speedY);
+    speedY |= (rise > 0) ? REVERSE_DIRECTION : 0;
     enemy = {
         { // rect
             // x y w h
@@ -498,12 +501,16 @@ inline void gameEnemySpawn(GameEnemy& enemy, const SDL_Rect friendRect) {
 inline void gameEnemyMove(GameEnemy& enemy) {
     if (!(enemy.speedX & ONE_PIXEL_PER_X_TICS)) {
         enemy.rect.x += (enemy.speedX & SPEED_VALUE) * (2 * !!(enemy.speedX & REVERSE_DIRECTION) - 1);
-    } else if (enemy.lifetime % (enemy.speedX & SPEED_VALUE) == 0) {
+    } else if (
+            (enemy.speedX & SPEED_VALUE) != 0 && // Prevent division by 0
+            enemy.lifetime % (enemy.speedX & SPEED_VALUE) == 0) {
         enemy.rect.x += 1 * (2 * !!(enemy.speedX & REVERSE_DIRECTION) - 1);
     }
     if (!(enemy.speedY & ONE_PIXEL_PER_X_TICS)) {
         enemy.rect.y += (enemy.speedY & SPEED_VALUE) * (2 * !!(enemy.speedY & REVERSE_DIRECTION) - 1);
-    } else if (enemy.lifetime % (enemy.speedY & SPEED_VALUE) == 0) {
+    } else if (
+            (enemy.speedY & SPEED_VALUE) != 0 && // Prevent division by 0
+            enemy.lifetime % (enemy.speedY & SPEED_VALUE) == 0) {
         enemy.rect.y += 1 * (2 * !!(enemy.speedY & REVERSE_DIRECTION) - 1);
     }
     enemy.lifetime += 1;
