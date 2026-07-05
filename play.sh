@@ -3,6 +3,8 @@
 brwoser=1
 emrun=0
 
+cd ${0:A:h}
+
 if [[ $1 == --native ]]; then
     brwoser=0
     shift

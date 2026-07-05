@@ -8,6 +8,8 @@ if [[ $CONTAINER_ID != steamrt4 ]]; then
     exit ${retv:-0}
 fi
 
+cd ${0:A:h}
+
 projectname=${0:A:h:t}
 native=0
 
