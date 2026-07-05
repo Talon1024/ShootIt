@@ -29,6 +29,7 @@
 #include <cmath>
 #include <array>
 #include <algorithm>
+#include <utility>
 #include <emscripten.h>
 #include "main.h"
 #include "assets.h"
@@ -233,9 +234,14 @@ enum class MovementPattern {
 };
 
 struct GameEnemy {
-    int32_t speedX; // Positive = X pixels every tic
-    int32_t speedY; // Negative = 1 pixel every X tics
-    uint32_t lifetime; // Used to
+    SDL_Rect rect;
+    int16_t speedX; // Positive = X pixels every tic
+    int16_t speedY; // Negative = 1 pixel every X tics
+    uint32_t lifetime; // Used for movement pattern
+};
+
+struct GameThingToDefend {
+    SDL_Rect rect;
 };
 
 struct GameEventSpawnEnemy {
@@ -253,11 +259,17 @@ struct GameData {
     bool lmb;
     // Events should be sorted by tick so that they run in a series
     std::array<GameEventSpawnEnemy, MAX_EVENTS + 1> events;
-    uint32_t eventMax;
-    GameEventSpawnEnemy* curEvent;
-    uint32_t tick;
+    std::array<GameEnemy, MAX_EVENTS * 4 + 1> enemies;
+    uint32_t activeEnemies;
     uint32_t totalEnemies;
     uint32_t killedEnemies;
+    GameThingToDefend theFriend;
+    // uint32_t eventMax;
+    GameEventSpawnEnemy* curEvent;
+    GameEventSpawnEnemy* lastEvent;
+    GameEnemy* curEnemy;
+    GameEnemy* lastEnemy;
+    uint32_t tick;
 };
 /*
 struct GameResources {
@@ -368,51 +380,129 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 }
 
 inline void gameNew(GameData& game, const float& difficulty) {
-    uint32_t numEvents = 64;
+    // ========== Set up events ==========
+    uint32_t numEvents = SDL_min(MAX_EVENTS, SDL_max(1, MAX_EVENTS * difficulty / 100.0));
     // Generate events
-    for (uint32_t curEventId = 0; curEventId < (MAX_EVENTS+1); curEventId++) {
+    {
         GameEventSpawnEnemy* event = game.events.data();
-        if (curEventId < numEvents) {
-            // TODO: Event setup
+        for (uint32_t curEventId = 0; curEventId < numEvents; curEventId++) {
             event->tick = SDL_rand(MAX_TICK) + 1;
             event->count = SDL_rand(SDL_min(3, uint32_t(difficulty / 30.0))) + 1;
             game.totalEnemies += event->count;
             // TODO: Balancing and polish!
-        } else {
-            // This stops the event sequence
-            event->tick = MAX_TICK + 1;
+            event += 1;
         }
-        event++;
     }
-    std::sort(game.events.begin(), game.events.end(), sortEventByTick);
+    std::sort(game.events.begin(), game.events.begin() + numEvents, sortEventByTick);
     game.curEvent = game.events.data();
+    game.lastEvent = game.events.data() + numEvents;
+    // ========== Set up/clear other things ==========
+    game.curEnemy = game.enemies.data();
+    game.lastEnemy = game.enemies.data() + MAX_EVENTS * 4;
+    game.activeEnemies = 0;
+    game.totalEnemies = 0;
+    game.killedEnemies = 0;
+    game.tick = 0;
+    game.theFriend = {
+        { // rect
+            VIEW_WIDTH - 18,
+            (VIEW_HEIGHT >> 1) - 8,
+            16,
+            16
+        }
+    };
 }
+
+inline void gameEnemySpawn(GameEnemy& enemy, const SDL_Rect friendRect);
+inline void gameEnemyMove(GameEnemy& enemy);
 
 // Render the game every tic
 inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
-    // Get mouse position
+    SDL_FRect renderRect;
+    // ========== Get mouse position ==========
     SDL_MouseButtonFlags mouseButtons = SDL_GetMouseState(&game.cursorX, &game.cursorY);
     game.lmb = mouseButtons & SDL_BUTTON_LEFT;
     SDL_RenderCoordinatesFromWindow(renderer, game.cursorX, game.cursorY, &game.cursorX, &game.cursorY);
     game.cursorX = SDL_roundf(game.cursorX);
     game.cursorY = SDL_roundf(game.cursorY);
-    // Go through events
-    if (game.curEvent->tick < MAX_TICK && game.curEvent->tick == game.tick) {
-        // TODO: Run the event
+    // ========== Go through events ==========
+    if (game.curEvent < game.lastEvent && game.curEvent->tick <= game.tick) {
+        // WIP: spawning enemies
+        SDL_Log("Spawn event at tick %d", game.curEvent->tick);
+        for (uint32_t spawnNum = 0; spawnNum < game.curEvent->count; spawnNum++) {
+            gameEnemySpawn(game.enemies[game.activeEnemies], game.theFriend.rect);
+            game.activeEnemies += 1;
+        }
         game.curEvent += 1;
     }
-    // render game stuff
+    // ========== Move enemies ==========
+    for (uint32_t curEnemy = 0; curEnemy < game.activeEnemies; curEnemy++) {
+        gameEnemyMove(game.enemies[curEnemy]);
+    }
+    // ========== Check for collisions ==========
+    // TODO
+    // ========== Render background ==========
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
     SDL_RenderTexture(renderer, resources[ASSET_BG], nullptr, nullptr); // bg
-    SDL_FRect mouseRect {
+    // ========== Render game stuff ==========
+    // Friend
+    SDL_RectToFRect(&game.theFriend.rect, &renderRect);
+    SDL_RenderTexture(renderer, resources[ASSET_F_FRIEND], nullptr, &renderRect);
+    // Foes
+    for (uint32_t curEnemy = 0; curEnemy < game.activeEnemies; curEnemy++) {
+        SDL_RectToFRect(&game.enemies[curEnemy].rect, &renderRect);
+        SDL_RenderTexture(renderer, resources[ASSET_F_ENEMY], nullptr, &renderRect);
+    }
+    // Crosshair
+    renderRect = {
         game.cursorX - 4.0f,
         game.cursorY - 4.0f,
         7.0f, 7.0f
     };
-    SDL_RenderTexture(renderer, game.lmb ? resources[ASSET_X_GHAIR] : resources[ASSET_X_OHAIR], nullptr, &mouseRect);
+    SDL_RenderTexture(renderer, game.lmb ? resources[ASSET_X_GHAIR] : resources[ASSET_X_OHAIR], nullptr, &renderRect);
     // TODO: all the other game stuff
     SDL_RenderPresent(renderer);
     game.tick += 1;
+}
+
+#define REVERSE_DIRECTION 0x4000 // Reverse movement direction when moving the enemy
+#define SPEED_VALUE 0x3FFF
+
+inline void gameEnemySpawn(GameEnemy& enemy, const SDL_Rect friendRect) {
+    // WIP!
+    int32_t x = -15;
+    int32_t y = SDL_rand(VIEW_HEIGHT - 16);
+    int32_t speed = SDL_rand(7) + 1;
+    // rise/run
+    // Aim for the center of the "friend".
+    float slope = ((friendRect.y + (friendRect.h >> 1)) - y) / ((friendRect.x + (friendRect.w >> 1)) - x);
+    int16_t speedX = SDL_max(SDL_floorf(speed * (1. - SDL_fabsf(slope))), 1);
+    int16_t speedY = SDL_floorf(4.0f * slope - 3.5f);
+    speedY |= (slope < 0) ? REVERSE_DIRECTION : 0;
+    enemy = {
+        { // rect
+            // x y w h
+            x, y,
+            16, 16
+        },
+        speedX, // speedX
+        speedY, // speedY
+        0, // lifetime
+    };
+}
+
+inline void gameEnemyMove(GameEnemy& enemy) {
+    if (enemy.speedX > 0) {
+        enemy.rect.x += (enemy.speedX & SPEED_VALUE) * -1 * !!(enemy.speedX & REVERSE_DIRECTION);
+    } else if (enemy.speedX < 0 && (enemy.lifetime % -enemy.speedX) == 0) {
+        enemy.rect.x += 1 * -1 * !!(enemy.speedX & REVERSE_DIRECTION);
+    }
+    if (enemy.speedY > 0) {
+        enemy.rect.y += (enemy.speedY & SPEED_VALUE) * -1 * !!(enemy.speedY & REVERSE_DIRECTION);
+    } else if (enemy.speedY < 0 && (enemy.lifetime % -enemy.speedY) == 0) {
+        enemy.rect.y += 1 * -1 * !!(enemy.speedY & REVERSE_DIRECTION);
+    }
+    enemy.lifetime += 1;
 }
 
 // For the rectangle that flashes during the loading sequence
