@@ -235,8 +235,8 @@ enum class MovementPattern {
 
 struct GameEnemy {
     SDL_Rect rect;
-    int16_t speedX; // Positive = X pixels every tic
-    int16_t speedY; // Negative = 1 pixel every X tics
+    uint16_t speedX; // Positive = X pixels every tic
+    uint16_t speedY; // Negative = 1 pixel every X tics
     uint32_t lifetime; // Used for movement pattern
 };
 
@@ -428,7 +428,7 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
     // ========== Go through events ==========
     if (game.curEvent < game.lastEvent && game.curEvent->tick <= game.tick) {
         // WIP: spawning enemies
-        SDL_Log("Spawn event at tick %d", game.curEvent->tick);
+        // SDL_Log("Spawn event at tick %d", game.curEvent->tick);
         for (uint32_t spawnNum = 0; spawnNum < game.curEvent->count; spawnNum++) {
             gameEnemySpawn(game.enemies[game.activeEnemies], game.theFriend.rect);
             game.activeEnemies += 1;
@@ -465,20 +465,24 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
     game.tick += 1;
 }
 
+#define ONE_PIXEL_PER_X_TICS 0x8000
 #define REVERSE_DIRECTION 0x4000 // Reverse movement direction when moving the enemy
+#define SPEED_FLAGS 0xC000
 #define SPEED_VALUE 0x3FFF
 
 inline void gameEnemySpawn(GameEnemy& enemy, const SDL_Rect friendRect) {
     // WIP!
-    int32_t x = -15;
+    int32_t x = -3;
     int32_t y = SDL_rand(VIEW_HEIGHT - 16);
-    int32_t speed = SDL_rand(7) + 1;
-    // rise/run
+    int32_t speed = SDL_rand(4);
     // Aim for the center of the "friend".
-    float slope = ((friendRect.y + (friendRect.h >> 1)) - y) / ((friendRect.x + (friendRect.w >> 1)) - x);
-    int16_t speedX = SDL_max(SDL_floorf(speed * (1. - SDL_fabsf(slope))), 1);
-    int16_t speedY = SDL_floorf(4.0f * slope - 3.5f);
-    speedY |= (slope < 0) ? REVERSE_DIRECTION : 0;
+    int32_t rise = ((friendRect.y + (friendRect.h >> 1)) - y);
+    int32_t run  = ((friendRect.x + (friendRect.w >> 1)) - x);
+    uint16_t speedX = ((uint16_t)SDL_floorf(speed * (1. - SDL_fabsf((float)rise/run))) + 1) & SPEED_VALUE;
+    uint16_t speedY = ((uint16_t)SDL_floorf(SDL_fabsf((float)run/rise)) & SPEED_VALUE);
+    speedY |= (rise > 0) ? REVERSE_DIRECTION : 0;
+    speedY |= ONE_PIXEL_PER_X_TICS;
+    SDL_Log("Speed: %hu %hu (%hx %hx)", speedX, speedY, speedX, speedY);
     enemy = {
         { // rect
             // x y w h
@@ -492,15 +496,15 @@ inline void gameEnemySpawn(GameEnemy& enemy, const SDL_Rect friendRect) {
 }
 
 inline void gameEnemyMove(GameEnemy& enemy) {
-    if (enemy.speedX > 0) {
-        enemy.rect.x += (enemy.speedX & SPEED_VALUE) * -1 * !!(enemy.speedX & REVERSE_DIRECTION);
-    } else if (enemy.speedX < 0 && (enemy.lifetime % -enemy.speedX) == 0) {
-        enemy.rect.x += 1 * -1 * !!(enemy.speedX & REVERSE_DIRECTION);
+    if (!(enemy.speedX & ONE_PIXEL_PER_X_TICS)) {
+        enemy.rect.x += (enemy.speedX & SPEED_VALUE) * (2 * !!(enemy.speedX & REVERSE_DIRECTION) - 1);
+    } else if (enemy.lifetime % (enemy.speedX & SPEED_VALUE) == 0) {
+        enemy.rect.x += 1 * (2 * !!(enemy.speedX & REVERSE_DIRECTION) - 1);
     }
-    if (enemy.speedY > 0) {
-        enemy.rect.y += (enemy.speedY & SPEED_VALUE) * -1 * !!(enemy.speedY & REVERSE_DIRECTION);
-    } else if (enemy.speedY < 0 && (enemy.lifetime % -enemy.speedY) == 0) {
-        enemy.rect.y += 1 * -1 * !!(enemy.speedY & REVERSE_DIRECTION);
+    if (!(enemy.speedY & ONE_PIXEL_PER_X_TICS)) {
+        enemy.rect.y += (enemy.speedY & SPEED_VALUE) * (2 * !!(enemy.speedY & REVERSE_DIRECTION) - 1);
+    } else if (enemy.lifetime % (enemy.speedY & SPEED_VALUE) == 0) {
+        enemy.rect.y += 1 * (2 * !!(enemy.speedY & REVERSE_DIRECTION) - 1);
     }
     enemy.lifetime += 1;
 }
