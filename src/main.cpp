@@ -266,9 +266,11 @@ struct GameEventSpawnEnemy {
     uint32_t count;
 };
 
-bool sortEventByTick(const GameEventSpawnEnemy& a, const GameEventSpawnEnemy& b) {
-    return a.tick < b.tick;
-}
+enum class GamePlayStatus {
+    Playing,
+    Win,
+    Loss,
+};
 
 struct GameData {
     float cursorX, cursorY;
@@ -280,6 +282,7 @@ struct GameData {
     uint32_t activeEnemies;
     uint32_t totalEnemies;
     uint32_t killedEnemies;
+    GamePlayStatus status;
     GameThingToDefend theFriend;
     // uint32_t eventMax;
     GameEventSpawnEnemy* curEvent;
@@ -300,6 +303,8 @@ inline void frameLoadFail();
 inline void frameLoadSuccess();
 inline void frameWaitingToStart(SDL_Texture** textures, const RasterFont& font);
 inline void frameGamePlay(SDL_Texture** resources, GameData& game);
+inline void frameGameWin();
+inline void frameGameLoss();
 inline void gameNew(GameData& game, const float& difficulty);
 
 /* This function runs once per frame, and is the heart of the program.
@@ -340,18 +345,30 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         if ((SDL_GetTicks() - lastTickTime) > GAME_TICK_TIME_MS) {
             frameGamePlay(resources, game);
             lastTickTime = SDL_GetTicks();
+            switch(game.status) {
+                case GamePlayStatus::Win:
+                    gameState = GameState::Win;
+                    break;
+                case GamePlayStatus::Loss:
+                    gameState = GameState::Loss;
+                    break;
+                default:
+                    break;
+            }
             drawn = false;
         }
         break;
     case GameState::Win:
         if (!drawn) {
             signalDone(1);
+            frameGameWin();
             drawn = true;
         }
         break;
     case GameState::Loss:
         if (!drawn) {
             signalDone(0);
+            frameGameLoss();
             drawn = true;
         }
         break;
@@ -396,6 +413,10 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     return SDL_APP_CONTINUE;  /* carry on with the program! */
 }
 
+bool sortEventByTick(const GameEventSpawnEnemy& a, const GameEventSpawnEnemy& b) {
+    return a.tick < b.tick;
+}
+
 inline void gameNew(GameData& game, const float& difficulty) {
     // ========== Set up events ==========
     uint32_t numEvents = SDL_min(MAX_EVENTS, SDL_max(1, MAX_EVENTS * difficulty / 100.0));
@@ -403,7 +424,7 @@ inline void gameNew(GameData& game, const float& difficulty) {
     {
         GameEventSpawnEnemy* event = game.events.data();
         for (uint32_t curEventId = 0; curEventId < numEvents; curEventId++) {
-            event->tick = SDL_rand(MAX_TICK) + 1;
+            event->tick = SDL_rand(MAX_TICK - 75 * 3) + 1;
             event->count = SDL_rand(SDL_min(3, uint32_t(difficulty / 30.0))) + 1;
             game.totalEnemies += event->count;
             // TODO: Balancing and polish!
@@ -414,10 +435,10 @@ inline void gameNew(GameData& game, const float& difficulty) {
     game.curEvent = game.events.data();
     game.lastEvent = game.events.data() + numEvents;
     // ========== Set up/clear other things ==========
+    game.status = GamePlayStatus::Playing;
     game.curEnemy = game.enemies.data();
     game.lastEnemy = game.enemies.data() + MAX_EVENTS * 4;
     game.activeEnemies = 0;
-    game.totalEnemies = 0;
     game.killedEnemies = 0;
     game.tick = 0;
     game.theFriend = {
@@ -458,6 +479,12 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
     }
     // ========== Check for collisions ==========
     // TODO
+    // ========== Check for win/loss ==========
+    if (game.killedEnemies == game.totalEnemies) {
+        game.status = GamePlayStatus::Win;
+    } else if (game.tick > MAX_TICK) {
+        game.status = GamePlayStatus::Loss;
+    }
     // ========== Render background ==========
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
     SDL_RenderTexture(renderer, resources[ASSET_BG], nullptr, nullptr); // bg
@@ -514,6 +541,18 @@ inline void gameEnemyMove(GameEnemy& enemy) {
     enemy.rect.x += enemy.speedX.moveAmount(enemy.lifetime);
     enemy.rect.y += enemy.speedY.moveAmount(enemy.lifetime);
     enemy.lifetime += 1;
+}
+
+inline void frameGameWin() {
+    SDL_SetRenderDrawColor(renderer, 0, 180, 0, 255);
+    SDL_RenderClear(renderer);
+    SDL_RenderPresent(renderer);
+}
+
+inline void frameGameLoss() {
+    SDL_SetRenderDrawColor(renderer, 180, 0, 0, 255);
+    SDL_RenderClear(renderer);
+    SDL_RenderPresent(renderer);
 }
 
 // For the rectangle that flashes during the loading sequence
