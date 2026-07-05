@@ -43,8 +43,9 @@ enum class GameState {
     Loss,
 };
 
-// 75+ FPS
-#define GAME_TICK_TIME_MS 12
+#define GAME_TICK_TIME_MS 12  // 75+ FPS
+#define MAX_EVENTS 64  // Maximum number of spawn events to generate
+#define MAX_TICK 3375  // A little less than 45 seconds
 
 // Data for a raster font
 class RasterFont {

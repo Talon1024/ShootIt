@@ -27,6 +27,8 @@
 #include <cstring>
 #include <cstdio>
 #include <cmath>
+#include <array>
+#include <algorithm>
 #include <emscripten.h>
 #include "main.h"
 #include "assets.h"
@@ -225,12 +227,51 @@ inline bool isPNG(void* data) {
     return false;
 }
 
+enum class MovementPattern {
+    Straight,
+    SquareRoot
+};
+
+struct GameEnemy {
+    int32_t speedX; // Positive = X pixels every tic
+    int32_t speedY; // Negative = 1 pixel every X tics
+    uint32_t lifetime; // Used to
+};
+
+struct GameEventSpawnEnemy {
+    uint32_t tick;
+    uint32_t count;
+};
+
+bool sortEventByTick(const GameEventSpawnEnemy& a, const GameEventSpawnEnemy& b) {
+    return a.tick < b.tick;
+}
+
+struct GameData {
+    float cursorX, cursorY;
+    // bool paused;
+    bool lmb;
+    // Events should be sorted by tick so that they run in a series
+    std::array<GameEventSpawnEnemy, MAX_EVENTS + 1> events;
+    uint32_t eventMax;
+    GameEventSpawnEnemy* curEvent;
+    uint32_t tick;
+    uint32_t totalEnemies;
+    uint32_t killedEnemies;
+};
+/*
+struct GameResources {
+    SDL_Texture* textures[TOTAL_ASSET_COUNT];
+};
+*/
+
 // Functions called during various loading/game states
 inline void frameLoading(SDL_Texture** textures, LoadState& loadState, RasterFont& font);
 inline void frameLoadFail();
 inline void frameLoadSuccess();
 inline void frameWaitingToStart(SDL_Texture** textures, const RasterFont& font);
-inline void frameGamePlay(SDL_Texture** textures, const float& mouseX, const float& mouseY);
+inline void frameGamePlay(SDL_Texture** resources, GameData& game);
+inline void gameNew(GameData& game, const float& difficulty);
 
 /* This function runs once per frame, and is the heart of the program.
  SAFETY: The renderer is most likely initialized.
@@ -239,35 +280,38 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 {
     // The "static" keyword makes these variables global, but only accessible
     // within the scope of this function.
-    static SDL_Texture* textures[TOTAL_ASSET_COUNT] = {};
+    static SDL_Texture* resources[TOTAL_ASSET_COUNT] = {};
     static LoadState loadState = LoadState::Loading;
     static GameState gameState = GameState::Loading;
-    static RasterFont font(textures);
+    static RasterFont font(resources);
+    static GameData game;
     static bool drawn = false;
     static bool paused = false;
     static bool newGame = false;
     static float difficulty = 0.0;
     if (newGame && loadState == LoadState::PostSuccess) {
         SDL_Log("Starting a new game! (difficulty: %.3f)", difficulty);
+        gameNew(game, difficulty);
         gameState = GameState::Play;
         signalStart();
         newGame = false;
         drawn = false;
     }
-    static uint32_t gameTick = 0;
     static uint64_t lastTickTime = 0;
+    // How I got the mouse position before moving the logic into the frame function.
+    /*
     float cursorX, cursorY;
     SDL_MouseButtonFlags mouseButtons = SDL_GetMouseState(&cursorX, &cursorY);
     SDL_RenderCoordinatesFromWindow(renderer, cursorX, cursorY, &cursorX, &cursorY);
     cursorX = roundf(cursorX);
     cursorY = roundf(cursorY);
+    */
     switch (gameState) {
     case GameState::Play:
         if ((SDL_GetTicks() - lastTickTime) > GAME_TICK_TIME_MS) {
-            frameGamePlay(textures, cursorX, cursorY);
-            game
-            gameTick += 1;
+            frameGamePlay(resources, game);
             lastTickTime = SDL_GetTicks();
+            drawn = false;
         }
         break;
     case GameState::Win:
@@ -283,21 +327,26 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         }
         break;
     case GameState::Paused:
+        gameState = GameState::Play;  // Not doing this rn
+        /*
         // Draw everything drawn in the 'play' state, and then "Paused" on top.
         if (!drawn) {
-            frameGamePlay(textures, cursorX, cursorY);
+            frameGamePlay(resources, game);
             font.drawText("Paused", 80, 80);
         }
+        */
         break;
     case GameState::Loading:
         switch (loadState) {
         case LoadState::Loading:
-            frameLoading(textures, loadState, font);
+            frameLoading(resources, loadState, font);
             break;
         case LoadState::Failure:
             frameLoadFail();
             return SDL_APP_FAILURE;
         case LoadState::Success:
+            // From this point on, JavaScript has write access to 'difficulty'
+            // and 'newGame'.
             signalReady(&difficulty, &newGame);
             frameLoadSuccess();
             loadState = LoadState::PostSuccess;
@@ -310,7 +359,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         break;
     case GameState::WaitingToStart:
         if (!drawn) {
-            frameWaitingToStart(textures, font);
+            frameWaitingToStart(resources, font);
             drawn = true;
         }
         break;
@@ -318,18 +367,52 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     return SDL_APP_CONTINUE;  /* carry on with the program! */
 }
 
-inline void frameGamePlay(SDL_Texture** textures, const float& mouseX, const float& mouseY) {
+inline void gameNew(GameData& game, const float& difficulty) {
+    uint32_t numEvents = 64;
+    // Generate events
+    for (uint32_t curEventId = 0; curEventId < (MAX_EVENTS+1); curEventId++) {
+        GameEventSpawnEnemy* event = game.events.data();
+        if (curEventId < numEvents) {
+            // TODO: Event setup
+            event->tick = SDL_rand(MAX_TICK) + 1;
+            event->count = SDL_rand(SDL_min(3, uint32_t(difficulty / 30.0))) + 1;
+            game.totalEnemies += event->count;
+            // TODO: Balancing and polish!
+        } else {
+            // This stops the event sequence
+            event->tick = MAX_TICK + 1;
+        }
+        event++;
+    }
+    std::sort(game.events.begin(), game.events.end(), sortEventByTick);
+    game.curEvent = game.events.data();
+}
+
+// Render the game every tic
+inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
+    // Get mouse position
+    SDL_MouseButtonFlags mouseButtons = SDL_GetMouseState(&game.cursorX, &game.cursorY);
+    game.lmb = mouseButtons & SDL_BUTTON_LEFT;
+    SDL_RenderCoordinatesFromWindow(renderer, game.cursorX, game.cursorY, &game.cursorX, &game.cursorY);
+    game.cursorX = SDL_roundf(game.cursorX);
+    game.cursorY = SDL_roundf(game.cursorY);
+    // Go through events
+    if (game.curEvent->tick < MAX_TICK && game.curEvent->tick == game.tick) {
+        // TODO: Run the event
+        game.curEvent += 1;
+    }
     // render game stuff
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-    SDL_RenderTexture(renderer, textures[ASSET_BG], nullptr, nullptr); // bg
-    // TODO: all the other game stuff
+    SDL_RenderTexture(renderer, resources[ASSET_BG], nullptr, nullptr); // bg
     SDL_FRect mouseRect {
-        mouseX - 4.0f,
-        mouseY - 4.0f,
+        game.cursorX - 4.0f,
+        game.cursorY - 4.0f,
         7.0f, 7.0f
     };
-    SDL_RenderTexture(renderer, textures[ASSET_X_OHAIR], nullptr, &mouseRect);
+    SDL_RenderTexture(renderer, game.lmb ? resources[ASSET_X_GHAIR] : resources[ASSET_X_OHAIR], nullptr, &mouseRect);
+    // TODO: all the other game stuff
     SDL_RenderPresent(renderer);
+    game.tick += 1;
 }
 
 // For the rectangle that flashes during the loading sequence
