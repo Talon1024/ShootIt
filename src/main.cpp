@@ -233,10 +233,27 @@ enum class MovementPattern {
     SquareRoot
 };
 
+class Speed {
+public:
+    bool reverseDirection : 1;
+    bool onePixelPerXTics : 1;
+    uint16_t speed : 14;
+    int32_t moveAmount(const uint16_t lifetime);
+};
+
+int32_t Speed::moveAmount(const uint16_t lifetime) {
+    if (!(onePixelPerXTics)) {
+        return speed * (2 * !!(reverseDirection) - 1);
+    } else if (speed != 0 /*Prevent division by 0*/ && lifetime % speed == 0) {
+        return 1 * (2 * !!(reverseDirection) - 1);
+    }
+    return 0;
+}
+
 struct GameEnemy {
     SDL_Rect rect;
-    uint16_t speedX; // Positive = X pixels every tic
-    uint16_t speedY; // Negative = 1 pixel every X tics
+    Speed speedX; // Positive = X pixels every tic
+    Speed speedY; // Negative = 1 pixel every X tics
     uint32_t lifetime; // Used for movement pattern
 };
 
@@ -428,7 +445,7 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
     // ========== Go through events ==========
     if (game.curEvent < game.lastEvent && game.curEvent->tick <= game.tick) {
         // WIP: spawning enemies
-        // SDL_Log("Spawn event at tick %d", game.curEvent->tick);
+        SDL_Log("Spawn event at tick %d", game.curEvent->tick);
         for (uint32_t spawnNum = 0; spawnNum < game.curEvent->count; spawnNum++) {
             gameEnemySpawn(game.enemies[game.activeEnemies], game.theFriend.rect);
             game.activeEnemies += 1;
@@ -465,27 +482,22 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
     game.tick += 1;
 }
 
-#define ONE_PIXEL_PER_X_TICS 0x8000
-#define REVERSE_DIRECTION 0x4000 // Reverse movement direction when moving the enemy
-#define SPEED_FLAGS 0xC000
-#define SPEED_VALUE 0x3FFF
-
 inline void gameEnemySpawn(GameEnemy& enemy, const SDL_Rect friendRect) {
     // WIP!
     int32_t x = -15;
-    int32_t y = SDL_rand(VIEW_HEIGHT - 16);
-    // int32_t y = SDL_rand(3) * 80;
+    // int32_t y = SDL_rand(VIEW_HEIGHT - 16);
+    int32_t y = SDL_rand(3) * 80 - 8;
     int32_t speed = SDL_rand(3);
     // Aim for the center of the "friend".
-    int32_t rise = (friendRect.y + (friendRect.h >> 1)) - y;
-    int32_t run  = (friendRect.x + (friendRect.w >> 1)) - x;
+    int32_t rise = friendRect.y - y;
+    int32_t run  = friendRect.x - x;
     rise -= 8; // Offset so that the rectangles touch
-    uint16_t speedX = ((uint16_t)SDL_floorf(speed * (1.f - SDL_fabsf((float)rise/run))) + 1) & SPEED_VALUE;
-    speedX |= (x < 0) ? REVERSE_DIRECTION : 0;
-    uint16_t speedY = rise == 0 ? 0 : (uint16_t)SDL_floorf(SDL_fabsf((float)run/rise)) & SPEED_VALUE;
-    speedY -= speedX - 1;
-    speedY |= ONE_PIXEL_PER_X_TICS;
-    speedY |= (rise > 0) ? REVERSE_DIRECTION : 0;
+    Speed speedX {}, speedY {};
+    speedX.speed = ((uint16_t)SDL_floorf(speed * (1.f - SDL_fabsf((float)rise/run))) + 1);
+    speedX.reverseDirection = (x < 0);
+    speedY.speed = rise == 0 ? 0 : (uint16_t)SDL_floorf(SDL_fabsf((float)run/(rise * speedX.speed)));
+    speedY.onePixelPerXTics = true;
+    speedY.reverseDirection = (rise > 0);
     enemy = {
         { // rect
             // x y w h
@@ -499,20 +511,8 @@ inline void gameEnemySpawn(GameEnemy& enemy, const SDL_Rect friendRect) {
 }
 
 inline void gameEnemyMove(GameEnemy& enemy) {
-    if (!(enemy.speedX & ONE_PIXEL_PER_X_TICS)) {
-        enemy.rect.x += (enemy.speedX & SPEED_VALUE) * (2 * !!(enemy.speedX & REVERSE_DIRECTION) - 1);
-    } else if (
-            (enemy.speedX & SPEED_VALUE) != 0 && // Prevent division by 0
-            enemy.lifetime % (enemy.speedX & SPEED_VALUE) == 0) {
-        enemy.rect.x += 1 * (2 * !!(enemy.speedX & REVERSE_DIRECTION) - 1);
-    }
-    if (!(enemy.speedY & ONE_PIXEL_PER_X_TICS)) {
-        enemy.rect.y += (enemy.speedY & SPEED_VALUE) * (2 * !!(enemy.speedY & REVERSE_DIRECTION) - 1);
-    } else if (
-            (enemy.speedY & SPEED_VALUE) != 0 && // Prevent division by 0
-            enemy.lifetime % (enemy.speedY & SPEED_VALUE) == 0) {
-        enemy.rect.y += 1 * (2 * !!(enemy.speedY & REVERSE_DIRECTION) - 1);
-    }
+    enemy.rect.x += enemy.speedX.moveAmount(enemy.lifetime);
+    enemy.rect.y += enemy.speedY.moveAmount(enemy.lifetime);
     enemy.lifetime += 1;
 }
 
