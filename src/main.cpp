@@ -25,8 +25,6 @@
 #include <SDL3/SDL_main.h>
 #include <cstdint>
 #include <cstring>
-#include <cstdio>
-#include <cmath>
 #include <array>
 // #include <utility> // for the 'swap' function
 #include <emscripten.h>
