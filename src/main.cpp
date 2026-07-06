@@ -28,8 +28,7 @@
 #include <cstdio>
 #include <cmath>
 #include <array>
-#include <algorithm>
-#include <utility>
+// #include <utility> // for the 'swap' function
 #include <emscripten.h>
 #include "main.h"
 #include "assets.h"
@@ -262,8 +261,8 @@ struct GameThingToDefend {
 };
 
 struct GameEventSpawnEnemy {
-    uint32_t tick;
-    uint32_t count;
+    uint16_t tick;
+    uint16_t count;
 };
 
 enum class GamePlayStatus {
@@ -413,8 +412,19 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     return SDL_APP_CONTINUE;  /* carry on with the program! */
 }
 
-bool sortEventByTick(const GameEventSpawnEnemy& a, const GameEventSpawnEnemy& b) {
-    return a.tick < b.tick;
+int SDLCALL sortEventByTick(const void* a, const void* b) {
+    const GameEventSpawnEnemy* ea = (const GameEventSpawnEnemy*) a;
+    const GameEventSpawnEnemy* eb = (const GameEventSpawnEnemy*) b;
+    if (eb->tick == 0 && ea->tick != 0) {
+        return -1;
+    } else if (ea->tick == 0 && eb->tick != 0) {
+        return 1;
+    } else if (ea->tick < eb->tick) {
+        return -1;
+    } else if (ea->tick > eb->tick) {
+        return 1;
+    }
+    return 0;
 }
 
 inline void gameNew(GameData& game, const float& difficulty) {
@@ -431,7 +441,11 @@ inline void gameNew(GameData& game, const float& difficulty) {
             event += 1;
         }
     }
-    std::sort(game.events.begin(), game.events.begin() + numEvents, sortEventByTick);
+    SDL_qsort(game.events.data(), numEvents, sizeof(GameEventSpawnEnemy), sortEventByTick);
+    // SDL_Log("Event ticks:");
+    // for (uint32_t index = 0; index < numEvents; index++) {
+    //     SDL_Log("%u", game.events[index].tick);
+    // }
     game.curEvent = game.events.data();
     game.lastEvent = game.events.data() + numEvents;
     // ========== Set up/clear other things ==========
