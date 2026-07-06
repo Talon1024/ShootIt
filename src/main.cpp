@@ -512,19 +512,22 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
 inline void gameEnemySpawn(GameEnemy& enemy, const SDL_Rect friendRect) {
     // WIP!
     int32_t x = -15;
-    // int32_t y = SDL_rand(VIEW_HEIGHT - 16);
-    int32_t y = SDL_rand(3) * 80 - 8;
-    int32_t speed = SDL_rand(3);
+    int32_t y = SDL_rand(VIEW_HEIGHT - 24) + 8;
+    // int32_t y = SDL_rand(3) * 80 - 8;
+    int32_t speed = SDL_rand(3) + 1;
     // Aim for the center of the "friend".
-    int32_t rise = friendRect.y - y;
+    int32_t rise = y - friendRect.y;
     int32_t run  = friendRect.x - x;
     rise -= 8; // Offset so that the rectangles touch
     Speed speedX {}, speedY {};
-    speedX.speed = ((uint16_t)SDL_floorf(speed * (1.f - SDL_fabsf((float)rise/run))) + 1);
+    // speedX.speed = ((uint16_t)SDL_floorf(speed * (1.f - SDL_fabsf((float)rise/run))) + 1);
+    speedX.speed = speed;
     speedX.reverseDirection = (x < 0);
-    speedY.speed = rise == 0 ? 0 : (uint16_t)SDL_floorf(SDL_fabsf((float)run/(rise * speedX.speed)));
+    // speedY.speed = rise == 0 ? 0 : (uint16_t)SDL_floorf(SDL_fabsf((float)run/(rise * speedX.speed)));
+    // y = mx
+    speedY.speed = rise == 0 ? 0 : (uint16_t)SDL_floor(1. / SDL_fabs((double)rise / run) / speed);
     speedY.onePixelPerXTics = true;
-    speedY.reverseDirection = (rise > 0);
+    speedY.reverseDirection = (rise < 0);
     enemy = {
         { // rect
             // x y w h
