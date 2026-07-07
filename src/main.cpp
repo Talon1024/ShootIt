@@ -230,7 +230,7 @@ enum class MovementPattern {
     SquareRoot
 };
 
-#define NINE_BIT_MAX 512
+#define NINE_BIT_MAX 511  // 512 - 1
 
 class Speed {
 public:
