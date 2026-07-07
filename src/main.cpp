@@ -568,11 +568,12 @@ void gameEnemySpawn(GameEnemy& enemy, const SDL_Rect friendRect) {
     speedX.useSpeedB = false;
     // run/rise is the same as 1/rise/run
     double slope = rise == 0 ? 0.0 : SDL_fabs((double)run / rise / speed);
-    double slopeReal = SDL_modf(slope, &slope);
+    double slopeInt;
+    double slopeReal = SDL_modf(slope, &slopeInt);
     // calculate speed A and B
     speedY.speedA = (uint16_t)SDL_min(NINE_BIT_MAX, SDL_floor(slope));
-    speedY.speedB = (uint16_t)SDL_min(NINE_BIT_MAX, slopeReal == 0.0 ? 0.0 : SDL_floor(1./slopeReal));
-    SDL_Log("slope, speedY A and B: %.4f %u %u", slope + slopeReal, speedY.speedA, speedY.speedB);
+    speedY.speedB = (uint16_t)SDL_min(NINE_BIT_MAX, slopeReal == 0.0 ? 0.0 : SDL_floor(slope * (0.5 + 0.5 * slopeReal)));
+    // SDL_Log("slope, speedY A and B: %.4f %u %u", slope, speedY.speedA, speedY.speedB);
     speedY.onePixelPerXTics = true;
     speedY.reverseDirection = (rise < 0);
     speedY.useSpeedB = false;
