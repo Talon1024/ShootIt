@@ -8,7 +8,7 @@
 <main>
 <h1>GAME TIME</h1>
 <h3 id="verb">...</h3>
-<iframe title="Game" width="1280" height="720" src="/index.html" id="game-frame"></iframe>
+<iframe title="Game" width="960" height="640" src="/index.html" id="game-frame"></iframe>
 <p><label for="difficulty">Difficulty: <input id="difficulty" type="number" min="1" max="100" value="1" disabled></label><button id="start" type="button" disabled>Start!</button></p>
 </main>
 <script type="text/javascript">
@@ -35,7 +35,7 @@ window.addEventListener("load", () => {
                 verbDisplay.innerText = ev.data.verb;
                 break;
             case "done":
-                verbDisplay.innerText = ev.data.won ? "Win!" : "Lose!";
+                verbDisplay.innerText = ev.data.win ? "Win!" : "Lose!";
                 break;
             }
         }

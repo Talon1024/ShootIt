@@ -296,10 +296,11 @@ enum class GamePlayStatus {
 };
 
 struct GameData {
-    float cursorX, cursorY;
+    SDL_FPoint cursorf;
+    SDL_Point cursor;
     // bool paused;
-    bool lmb;
-    bool lmbHeld;
+    // bool lmb;
+    // bool lmbHeld;
     // Events should be sorted by tick so that they run in a series
     std::array<GameEventSpawnEnemy, MAX_EVENTS + 1> events;
     std::array<GameEnemy, MAX_EVENTS * 4 + 1> enemies;
@@ -453,13 +454,14 @@ int SDLCALL sortEventByTick(const void* a, const void* b) {
 }
 
 inline void gameNew(GameData& game, const float& difficulty) {
+    game.totalEnemies = 0; // Do this first so that I can add to it in the loop.
     // ========== Set up events ==========
     uint32_t numEvents = SDL_min(MAX_EVENTS, SDL_max(1, MAX_EVENTS * difficulty / 100.0));
     // Generate events
     {
         GameEventSpawnEnemy* event = game.events.data();
         for (uint32_t curEventId = 0; curEventId < numEvents; curEventId++) {
-            event->tick = SDL_rand(MAX_TICK - 75 * 3) + 1;
+            event->tick = SDL_rand(MAX_TICK - 75 * 5) + 1;
             event->count = SDL_rand(SDL_min(3, uint32_t(difficulty / 30.0))) + 1;
             game.totalEnemies += event->count;
             // TODO: Balancing and polish!
@@ -481,8 +483,8 @@ inline void gameNew(GameData& game, const float& difficulty) {
     game.activeEnemies = 0;
     game.killedEnemies = 0;
     game.tick = 0;
-    game.lmb = false;
-    game.lmbHeld = false;
+    // game.lmb = false;
+    // game.lmbHeld = false;
     game.theFriend = {
         { // rect
             VIEW_WIDTH - 18,
@@ -499,13 +501,19 @@ inline void gameEnemyMove(GameEnemy& enemy);
 // Render the game every tic
 inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
     SDL_FRect renderRect;
+    SDL_Rect collision;
     // ========== Get mouse position ==========
-    SDL_MouseButtonFlags mouseButtons = SDL_GetMouseState(&game.cursorX, &game.cursorY);
-    game.lmbHeld = game.lmb && (mouseButtons & SDL_BUTTON_LEFT);
-    game.lmb = mouseButtons & SDL_BUTTON_LEFT;
-    SDL_RenderCoordinatesFromWindow(renderer, game.cursorX, game.cursorY, &game.cursorX, &game.cursorY);
-    game.cursorX = SDL_roundf(game.cursorX);
-    game.cursorY = SDL_roundf(game.cursorY);
+    SDL_MouseButtonFlags mouseButtons = SDL_GetMouseState(&game.cursorf.x, &game.cursorf.y);
+    static bool lmb = false;
+    bool lmbHeld = lmb && (mouseButtons & SDL_BUTTON_LEFT);
+    lmb = mouseButtons & SDL_BUTTON_LEFT;
+    bool shoot = (lmb && !lmbHeld);
+    bool shotHit = false;
+    SDL_RenderCoordinatesFromWindow(renderer, game.cursorf.x, game.cursorf.y, &game.cursorf.x, &game.cursorf.y);
+    game.cursorf.x = SDL_roundf(game.cursorf.x);
+    game.cursorf.y = SDL_roundf(game.cursorf.y);
+    game.cursor.x = game.cursorf.x;
+    game.cursor.y = game.cursorf.y;
     // ========== Go through events ==========
     if (game.curEvent < game.lastEvent && game.curEvent->tick <= game.tick) {
         // WIP: spawning enemies
@@ -516,12 +524,23 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
         }
         game.curEvent += 1;
     }
-    // ========== Move enemies ==========
+    // ========== Process enemies ==========
     for (uint32_t curEnemy = 0; curEnemy < game.activeEnemies; curEnemy++) {
+        // ========== Move enemies ==========
         gameEnemyMove(game.enemies[curEnemy]);
+        // ========== Check for collisions ==========
+        if (SDL_GetRectIntersection(&game.enemies[curEnemy].rect, &game.theFriend.rect, &collision)) {
+            game.status = GamePlayStatus::Loss;
+        }
+        if (shoot && !shotHit && SDL_PointInRect(&game.cursor, &game.enemies[curEnemy].rect)) {
+            // Swap current enemy with the last active enemy so it can be easily
+            // removed.
+            std::swap(game.enemies[curEnemy], game.enemies[game.activeEnemies-1]);
+            game.killedEnemies += 1;
+            game.activeEnemies -= 1;
+            shotHit = true;
+        }
     }
-    // ========== Check for collisions ==========
-    // TODO
     // ========== Check for win/loss ==========
     if (game.killedEnemies == game.totalEnemies) {
         game.status = GamePlayStatus::Win;
@@ -542,11 +561,11 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
     }
     // Crosshair
     renderRect = {
-        game.cursorX - 4.0f,
-        game.cursorY - 4.0f,
+        game.cursor.x - 4.0f,
+        game.cursor.y - 4.0f,
         7.0f, 7.0f
     };
-    SDL_RenderTexture(renderer, (game.lmb && !game.lmbHeld) ? resources[ASSET_X_GHAIR] : resources[ASSET_X_OHAIR], nullptr, &renderRect);
+    SDL_RenderTexture(renderer, shoot ? resources[ASSET_X_GHAIR] : resources[ASSET_X_OHAIR], nullptr, &renderRect);
     // TODO: all the other game stuff
     SDL_RenderPresent(renderer);
     game.tick += 1;
