@@ -296,8 +296,14 @@ static const size_t explosionFrames[EXPLOSION_FRAME_COUNT] {
 
 struct GameEnemy {
     SDL_Rect rect;
-    Speed speedX; // Positive = X pixels every tic
-    Speed speedY; // Negative = 1 pixel every X tics
+    Speed speedX;
+    Speed speedY;
+};
+
+struct GameBomb {
+    SDL_Rect rect;
+    Speed speedX;
+    Speed speedY;
 };
 
 struct GameThingToDefend {
@@ -325,8 +331,10 @@ struct GameData {
     std::array<GameEventSpawnEnemy, MAX_EVENTS + 1> events;
     std::array<GameEnemy, MAX_EVENTS * 4 + 1> enemies;
     std::array<GameExplosion, MAX_EVENTS * 4 + 1> explosions;
-    uint32_t activeExplosions;
+    std::array<GameBomb, MAX_EVENTS * 4 + 1> bombs;
     uint32_t activeEnemies;
+    uint32_t activeExplosions;
+    uint32_t activeBombs;
     uint32_t totalEnemies;
     uint32_t killedEnemies;
     GamePlayStatus status;
@@ -334,16 +342,8 @@ struct GameData {
     // uint32_t eventMax;
     GameEventSpawnEnemy* curEvent;
     GameEventSpawnEnemy* lastEvent;
-    GameEnemy* curEnemy;
-    GameEnemy* lastEnemy;
     uint32_t tick;
 };
-
-/*
-struct GameResources {
-    SDL_Texture* textures[TOTAL_ASSET_COUNT];
-};
-*/
 
 // Functions called during various loading/game states
 inline void frameLoading(SDL_Texture** textures, LoadState& loadState, RasterFont& font);
@@ -501,8 +501,6 @@ inline void gameNew(GameData& game, const float& difficulty) {
     game.lastEvent = game.events.data() + numEvents;
     // ========== Set up/clear other things ==========
     game.status = GamePlayStatus::Playing;
-    game.curEnemy = game.enemies.data();
-    game.lastEnemy = game.enemies.data() + MAX_EVENTS * 4;
     game.activeEnemies = 0;
     game.killedEnemies = 0;
     game.activeExplosions = 0;
@@ -521,6 +519,9 @@ inline void gameNew(GameData& game, const float& difficulty) {
 
 void gameEnemySpawn(GameEnemy& enemy, const SDL_Rect friendRect);
 inline void gameEnemyMove(GameEnemy& enemy);
+inline void gameEnemyKill(GameData& game, uint32_t curEnemy);
+inline void gameBombMove(GameBomb& bomb);
+inline void gameBombKill(GameData& game, uint32_t curBomb);
 
 // Render the game every tic
 inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
@@ -558,17 +559,7 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
         }
         // shotHit prevents multi-kills
         if (shoot && !shotHit && SDL_PointInRect(&game.cursor, &game.enemies[curEnemy].rect)) {
-            // Add an explosion where this enemy once was
-            game.explosions[game.activeExplosions] = {
-                game.enemies[curEnemy].rect, // rect (copy from enemy)
-                0 // frame
-            };
-            game.activeExplosions += 1;
-            // Swap current enemy with the last active enemy so it can be easily
-            // removed.
-            std::swap(game.enemies[curEnemy], game.enemies[game.activeEnemies-1]);
-            game.killedEnemies += 1;
-            game.activeEnemies -= 1;
+            gameEnemyKill(game, curEnemy);
             shotHit = true;
         }
     }
@@ -604,6 +595,11 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
         SDL_RectToFRect(&game.explosions[curExpl].rect, &renderRect);
         SDL_RenderTexture(renderer, resources[explosionFrames[game.explosions[curExpl].frame]], nullptr, &renderRect);
         game.explosions[curExpl].frame += 1;
+    }
+    // Bombs
+    for (uint32_t curBomb = 0; curBomb < game.activeBombs; curBomb++) {
+        SDL_RectToFRect(&game.bombs[curBomb].rect, &renderRect);
+        SDL_RenderTexture(renderer, resources[ASSET_F_BOMB], nullptr, &renderRect);
     }
     // Crosshair
     renderRect = {
@@ -656,6 +652,47 @@ void gameEnemySpawn(GameEnemy& enemy, const SDL_Rect friendRect) {
 inline void gameEnemyMove(GameEnemy& enemy) {
     enemy.rect.x += enemy.speedX.moveAmount();
     enemy.rect.y += enemy.speedY.moveAmount();
+}
+
+inline void gameEnemyKill(GameData& game, uint32_t curEnemy) {
+    // Add an explosion where this enemy once was
+    game.explosions[game.activeExplosions] = {
+        game.enemies[curEnemy].rect, // rect (copy from enemy)
+        0 // frame
+    };
+    game.activeExplosions += 1;
+    // Swap current enemy with the last active enemy so it can be easily
+    // removed.
+    std::swap(game.enemies[curEnemy], game.enemies[game.activeEnemies-1]);
+    game.killedEnemies += 1;
+    game.activeEnemies -= 1;
+}
+
+inline void gameBombMove(GameBomb& bomb) {
+    #define BOTTOM_EDGE VIEW_HEIGHT - 16
+    if (bomb.rect.y <= 0 || bomb.rect.y >= BOTTOM_EDGE) {
+        bomb.speedY.reverseDirection = !bomb.speedY.reverseDirection;
+    }
+    // move
+    bomb.rect.x += bomb.speedX.moveAmount();
+    bomb.rect.y += bomb.speedY.moveAmount();
+}
+
+inline void gameBombKill(GameData& game, uint32_t curBomb) {
+    game.explosions[game.activeExplosions] = {
+        game.bombs[curBomb].rect, // rect (copy from bomb)
+        0 // frame
+    };
+    for (uint32_t curEnemy = 0; curEnemy < game.activeEnemies; curEnemy++) {
+        // Explode ALL the enemies >:)
+        game.explosions[game.activeExplosions] = {
+            game.enemies[curEnemy].rect, // rect (copy from enemy)
+            0 // frame
+        };
+        game.activeExplosions += 1;
+    }
+    game.killedEnemies += game.activeEnemies;
+    game.activeEnemies = 0;
 }
 
 inline void frameGameWin() {
