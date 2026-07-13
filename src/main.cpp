@@ -158,7 +158,7 @@ int32_t getPNGYOffset(void* bufdata, size_t bufsize) {
 #define SPACE_WIDTH 5.0
 
 void RasterFont::drawText(const char* text, float x, float y) const {
-    size_t textLength = std::strlen(text);
+    size_t textLength = SDL_strlen(text);
     SDL_FRect charRect {x, y, 0.0, 0.0};
     for (size_t pos = 0; pos < textLength; pos++) {
         char curChar = text[pos];
@@ -343,6 +343,7 @@ struct GameData {
     GameEventSpawnEnemy* curEvent;
     GameEventSpawnEnemy* lastEvent;
     uint32_t tick;
+    uint32_t second;
 };
 
 // Functions called during various loading/game states
@@ -350,7 +351,7 @@ inline void frameLoading(SDL_Texture** textures, LoadState& loadState, RasterFon
 inline void frameLoadFail();
 inline void frameLoadSuccess();
 inline void frameWaitingToStart(SDL_Texture** textures, const RasterFont& font);
-inline void frameGamePlay(SDL_Texture** resources, GameData& game);
+inline void frameGamePlay(SDL_Texture** resources, GameData& game, const RasterFont& font);
 inline void frameGameWin();
 inline void frameGameLoss();
 inline void gameNew(GameData& game, const float& difficulty);
@@ -391,7 +392,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     switch (gameState) {
     case GameState::Play:
         if ((SDL_GetTicks() - lastTickTime) > GAME_TICK_TIME_MS) {
-            frameGamePlay(resources, game);
+            frameGamePlay(resources, game, font);
             lastTickTime = SDL_GetTicks();
             switch(game.status) {
                 case GamePlayStatus::Win:
@@ -505,6 +506,7 @@ inline void gameNew(GameData& game, const float& difficulty) {
     game.killedEnemies = 0;
     game.activeExplosions = 0;
     game.tick = 0;
+    game.second = MAX_TICK / 75;
     // game.lmb = false;
     // game.lmbHeld = false;
     game.theFriend = {
@@ -524,12 +526,12 @@ inline void gameBombMove(GameBomb& bomb);
 inline void gameBombKill(GameData& game, uint32_t curBomb);
 
 // Render the game every tic
-inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
+inline void frameGamePlay(SDL_Texture** resources, GameData& game, const RasterFont& font) {
     SDL_FRect renderRect;
     SDL_Rect collision;
     // ========== Get mouse position ==========
     SDL_MouseButtonFlags mouseButtons = SDL_GetMouseState(&game.cursorf.x, &game.cursorf.y);
-    static bool lmb = false;
+    static bool lmb = false; // Must be static for lmbHeld to work properly
     bool lmbHeld = lmb && (mouseButtons & SDL_BUTTON_LEFT);
     lmb = mouseButtons & SDL_BUTTON_LEFT;
     bool shoot = (lmb && !lmbHeld);
@@ -553,13 +555,23 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
     for (uint32_t curEnemy = 0; curEnemy < game.activeEnemies; curEnemy++) {
         // ========== Move enemies ==========
         gameEnemyMove(game.enemies[curEnemy]);
-        // ========== Check for collisions ==========
+        // ========== Check for collisions with Mr. Green ==========
         if (SDL_GetRectIntersection(&game.enemies[curEnemy].rect, &game.theFriend.rect, &collision)) {
             game.status = GamePlayStatus::Loss;
         }
         // shotHit prevents multi-kills
         if (shoot && !shotHit && SDL_PointInRect(&game.cursor, &game.enemies[curEnemy].rect)) {
             gameEnemyKill(game, curEnemy);
+            shotHit = true;
+        }
+    }
+    // ========== Process bombs ==========
+    for (uint32_t curBomb = 0; curBomb < game.activeBombs; curBomb++) {
+        // ========== Move bombs ==========
+        gameBombMove(game.bombs[curBomb]);
+        // shotHit prevents multi-kills
+        if (shoot && !shotHit && SDL_PointInRect(&game.cursor, &game.bombs[curBomb].rect)) {
+            gameBombKill(game, curBomb);
             shotHit = true;
         }
     }
@@ -571,6 +583,9 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
             // and remove it
             game.activeExplosions -= 1;
         }
+    }
+    if (game.tick % 75 == 0) {
+        game.second -= 1;
     }
     // ========== Check for win/loss ==========
     if (game.killedEnemies == game.totalEnemies) {
@@ -608,7 +623,11 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
         7.0f, 7.0f
     };
     SDL_RenderTexture(renderer, shoot ? resources[ASSET_X_GHAIR] : resources[ASSET_X_OHAIR], nullptr, &renderRect);
-    // TODO: all the other game stuff
+    // Timer
+    static char timerText[5] = {0}; // Time left: 0:45 (also static to reduce work)
+    SDL_snprintf(timerText, 5, "0:%02u", game.second);
+    font.drawText(timerText, VIEW_WIDTH - 20, 1.0);
+    // Done with this frame
     SDL_RenderPresent(renderer);
     game.tick += 1;
 }
