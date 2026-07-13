@@ -274,6 +274,26 @@ int32_t Speed::moveAmount() {
     return 0;
 }
 
+struct GameExplosion {
+    SDL_Rect rect;
+    uint8_t frame;
+};
+
+#define EXPLOSION_FRAME_COUNT 10
+
+static const size_t explosionFrames[EXPLOSION_FRAME_COUNT] {
+    ASSET_EXPLOD_1,
+    ASSET_EXPLOD_2,
+    ASSET_EXPLOD_3,
+    ASSET_EXPLOD_4,
+    ASSET_EXPLOD_5,
+    ASSET_EXPLOD_6,
+    ASSET_EXPLOD_7,
+    ASSET_EXPLOD_8,
+    ASSET_EXPLOD_9,
+    ASSET_EXPLOD_A
+};
+
 struct GameEnemy {
     SDL_Rect rect;
     Speed speedX; // Positive = X pixels every tic
@@ -304,6 +324,8 @@ struct GameData {
     // Events should be sorted by tick so that they run in a series
     std::array<GameEventSpawnEnemy, MAX_EVENTS + 1> events;
     std::array<GameEnemy, MAX_EVENTS * 4 + 1> enemies;
+    std::array<GameExplosion, MAX_EVENTS * 4 + 1> explosions;
+    uint32_t activeExplosions;
     uint32_t activeEnemies;
     uint32_t totalEnemies;
     uint32_t killedEnemies;
@@ -316,6 +338,7 @@ struct GameData {
     GameEnemy* lastEnemy;
     uint32_t tick;
 };
+
 /*
 struct GameResources {
     SDL_Texture* textures[TOTAL_ASSET_COUNT];
@@ -482,6 +505,7 @@ inline void gameNew(GameData& game, const float& difficulty) {
     game.lastEnemy = game.enemies.data() + MAX_EVENTS * 4;
     game.activeEnemies = 0;
     game.killedEnemies = 0;
+    game.activeExplosions = 0;
     game.tick = 0;
     // game.lmb = false;
     // game.lmbHeld = false;
@@ -532,13 +556,29 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
         if (SDL_GetRectIntersection(&game.enemies[curEnemy].rect, &game.theFriend.rect, &collision)) {
             game.status = GamePlayStatus::Loss;
         }
+        // shotHit prevents multi-kills
         if (shoot && !shotHit && SDL_PointInRect(&game.cursor, &game.enemies[curEnemy].rect)) {
+            // Add an explosion where this enemy once was
+            game.explosions[game.activeExplosions] = {
+                game.enemies[curEnemy].rect, // rect (copy from enemy)
+                0 // frame
+            };
+            game.activeExplosions += 1;
             // Swap current enemy with the last active enemy so it can be easily
             // removed.
             std::swap(game.enemies[curEnemy], game.enemies[game.activeEnemies-1]);
             game.killedEnemies += 1;
             game.activeEnemies -= 1;
             shotHit = true;
+        }
+    }
+    // ========== Remove explosions at the end of their animation ==========
+    for (uint32_t curExpl = 0; curExpl < game.activeExplosions; curExpl++) {
+        if (game.explosions[curExpl].frame == EXPLOSION_FRAME_COUNT) {
+            // Swap current explosion with the last
+            std::swap(game.explosions[curExpl], game.explosions[game.activeExplosions-1]);
+            // and remove it
+            game.activeExplosions -= 1;
         }
     }
     // ========== Check for win/loss ==========
@@ -558,6 +598,12 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game) {
     for (uint32_t curEnemy = 0; curEnemy < game.activeEnemies; curEnemy++) {
         SDL_RectToFRect(&game.enemies[curEnemy].rect, &renderRect);
         SDL_RenderTexture(renderer, resources[ASSET_F_ENEMY], nullptr, &renderRect);
+    }
+    // Explosions
+    for (uint32_t curExpl = 0; curExpl < game.activeExplosions; curExpl++) {
+        SDL_RectToFRect(&game.explosions[curExpl].rect, &renderRect);
+        SDL_RenderTexture(renderer, resources[explosionFrames[game.explosions[curExpl].frame]], nullptr, &renderRect);
+        game.explosions[curExpl].frame += 1;
     }
     // Crosshair
     renderRect = {
