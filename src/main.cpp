@@ -26,7 +26,7 @@
 #include <cstdint>
 #include <cstring>
 #include <array>
-// #include <utility> // for the 'swap' function
+#include <utility> // for the 'swap' function
 #include <emscripten.h>
 #include "main.h"
 #include "assets.h"
