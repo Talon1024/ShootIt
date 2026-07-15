@@ -96,18 +96,6 @@ uint32_t getPrimaryDisplay() {
     return primaryDisplayId;
 }
 
-SDL_Texture* loadAsset(SDL_Renderer* renderer, const char* fname) {
-    char* fullpath;
-    SDL_asprintf(&fullpath, "%s/%s", SDL_GetBasePath(), fname);
-    SDL_Surface* surf = SDL_LoadPNG(fullpath);
-    SDL_free(fullpath);
-    if (!surf) { return nullptr; }
-    SDL_Texture* tex = SDL_CreateTextureFromSurface(renderer, surf);
-    SDL_DestroySurface(surf);
-    if (!tex) { return nullptr; }
-    return tex;
-}
-
 bool loadAssetAsync(const char* asset, uint32_t index) {
     char* fullpath;
     SDL_asprintf(&fullpath, "%s/%s", SDL_GetBasePath(), asset);
@@ -215,15 +203,6 @@ EM_JS(void, signalStart, (), {
 EM_JS(void, signalDone, (int32_t won), {
     window.parent.postMessage({op: "done", win: !!won});
 });
-
-inline bool isPNG(void* data) {
-    // Check for PNG signature
-    if (memmem(data, 8, "\x89PNG\r\n\x1a\n", 8) == data) {
-        void* ihdr = (void*)((char*)data + 12);
-        return memmem(ihdr, 4, "IHDR", 4) == ihdr;
-    }
-    return false;
-}
 
 enum class MovementPattern {
     Straight,
@@ -748,13 +727,13 @@ inline void frameLoading(SDL_Texture** textures, LoadState& loadState, RasterFon
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     if (SDL_GetAsyncIOResult(queue, &outcome)) {
         uint32_t assetIndex = *(uint32_t*)outcome.userdata;
-        delete (uint32_t*) outcome.userdata;
         if (outcome.result == SDL_ASYNCIO_COMPLETE) {
-            if (isPNG(outcome.buffer)) {
+            SDL_IOStream* dataStream = SDL_IOFromConstMem(
+                outcome.buffer,
+                (size_t) outcome.bytes_transferred
+            );
+            if (SDL_Surface* surf = SDL_LoadPNG_IO(dataStream, true)) {
                 font.assignAsset(assetIndex, outcome);
-                SDL_Surface* surf = SDL_LoadPNG_IO(SDL_IOFromConstMem(
-                    outcome.buffer, (size_t) outcome.bytes_transferred
-                ), true);
                 if (surf) {
                     textures[assetIndex] = SDL_CreateTextureFromSurface(renderer, surf);
                     if (!textures[assetIndex]) {
