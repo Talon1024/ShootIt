@@ -226,7 +226,7 @@ public:
     uint16_t speedB : 9;
     uint16_t speedA : 9;
     int32_t moveAmount();
-    Speed() : reverseDirection(false), onePixelPerXTics(false), useSpeedB(false), speedB(0), speedA(0), lifetime(0) {}
+    Speed(uint16_t speedA = 0) : reverseDirection(false), onePixelPerXTics(false), useSpeedB(false), speedB(0), speedA(speedA), lifetime(0) {}
 private:
     uint16_t lifetime : 9; // used for movement pattern
 };
@@ -294,6 +294,10 @@ struct GameEventSpawnEnemy {
     uint16_t count;
 };
 
+struct GameEventSpawnBomb {
+    uint16_t tick;
+};
+
 enum class GamePlayStatus {
     Playing,
     Win,
@@ -308,6 +312,7 @@ struct GameData {
     // bool lmbHeld;
     // Events should be sorted by tick so that they run in a series
     std::array<GameEventSpawnEnemy, MAX_EVENTS + 1> events;
+    std::array<GameEventSpawnBomb, MAX_EVENTS + 1> bombSpawns;
     std::array<GameEnemy, MAX_EVENTS * 4 + 1> enemies;
     std::array<GameExplosion, MAX_EVENTS * 4 + 1> explosions;
     std::array<GameBomb, MAX_EVENTS * 4 + 1> bombs;
@@ -321,6 +326,8 @@ struct GameData {
     // uint32_t eventMax;
     GameEventSpawnEnemy* curEvent;
     GameEventSpawnEnemy* lastEvent;
+    GameEventSpawnBomb* curBombSpawn;
+    GameEventSpawnBomb* lastBombSpawn;
     uint32_t tick;
     uint32_t second;
 };
@@ -458,32 +465,47 @@ int SDLCALL sortEventByTick(const void* a, const void* b) {
 
 inline void gameNew(GameData& game, const float& difficulty) {
     game.totalEnemies = 0; // Do this first so that I can add to it in the loop.
-    // ========== Set up events ==========
+    // ========== Set up enemy spawns ==========
     uint32_t numEvents = SDL_min(MAX_EVENTS, SDL_max(1, MAX_EVENTS * difficulty / 100.0));
-    // Generate events
     {
         GameEventSpawnEnemy* event = game.events.data();
         for (uint32_t curEventId = 0; curEventId < numEvents; curEventId++) {
             event->tick = SDL_rand(MAX_TICK - 75 * 5) + 1;
             event->count = SDL_rand(SDL_min(3, uint32_t(difficulty / 30.0))) + 1;
             game.totalEnemies += event->count;
-            // TODO: Balancing and polish!
+            // TODO?: Balancing and polish!
             event += 1;
         }
     }
     SDL_qsort(game.events.data(), numEvents, sizeof(GameEventSpawnEnemy), sortEventByTick);
+    game.curEvent = game.events.data();
+    game.lastEvent = game.events.data() + numEvents;
     // Ensure events are sorted by tick
     // SDL_Log("Event ticks:");
     // for (uint32_t index = 0; index < numEvents; index++) {
     //     SDL_Log("%u", game.events[index].tick);
     // }
-    game.curEvent = game.events.data();
-    game.lastEvent = game.events.data() + numEvents;
+    // Bomb spawns should start at difficulty 60
+    uint32_t numBombSpawns = SDL_min(MAX_EVENTS, SDL_max(0, difficulty / 10.0 - 5.0));
+    {
+        GameEventSpawnBomb* bombSpawn = game.bombSpawns.data();
+        if (numBombSpawns > 0) {
+            // Make bomb spawns evenly spaced for time
+            uint32_t interval = MAX_TICK / (numBombSpawns+1);
+            for (uint32_t curEventId = 1; curEventId <= numBombSpawns; curEventId++) {
+                bombSpawn->tick = interval * curEventId;
+                bombSpawn += 1;
+            }
+        }
+    }
+    game.curBombSpawn = game.bombSpawns.data();
+    game.lastBombSpawn = game.bombSpawns.data() + numBombSpawns;
     // ========== Set up/clear other things ==========
     game.status = GamePlayStatus::Playing;
     game.activeEnemies = 0;
     game.killedEnemies = 0;
     game.activeExplosions = 0;
+    game.activeBombs = 0;
     game.tick = 0;
     game.second = MAX_TICK / 75;
     // game.lmb = false;
@@ -501,6 +523,7 @@ inline void gameNew(GameData& game, const float& difficulty) {
 void gameEnemySpawn(GameEnemy& enemy, const SDL_Rect friendRect);
 inline void gameEnemyMove(GameEnemy& enemy);
 inline void gameEnemyKill(GameData& game, uint32_t curEnemy);
+inline void gameBombSpawn(GameBomb& bomb);
 inline void gameBombMove(GameBomb& bomb);
 inline void gameBombKill(GameData& game, uint32_t curBomb);
 
@@ -522,7 +545,6 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game, const RasterF
     game.cursor.y = game.cursorf.y;
     // ========== Go through events ==========
     if (game.curEvent < game.lastEvent && game.curEvent->tick <= game.tick) {
-        // WIP: spawning enemies
         SDL_Log("Spawn event at tick %d", game.curEvent->tick);
         for (uint32_t spawnNum = 0; spawnNum < game.curEvent->count; spawnNum++) {
             gameEnemySpawn(game.enemies[game.activeEnemies], game.theFriend.rect);
@@ -530,8 +552,14 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game, const RasterF
         }
         game.curEvent += 1;
     }
+    if (game.curBombSpawn < game.lastBombSpawn && game.curBombSpawn->tick <= game.tick) {
+        SDL_Log("Bomb spawn event at tick %d", game.curEvent->tick);
+        gameBombSpawn(game.bombs[game.activeBombs]);
+        game.activeBombs += 1;
+        game.curBombSpawn += 1;
+    }
     // ========== Process enemies ==========
-    for (uint32_t curEnemy = 0; curEnemy < game.activeEnemies; curEnemy++) {
+    for (int32_t curEnemy = game.activeEnemies-1; curEnemy >= 0; curEnemy--) {
         // ========== Move enemies ==========
         gameEnemyMove(game.enemies[curEnemy]);
         // ========== Check for collisions with Mr. Green ==========
@@ -545,7 +573,7 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game, const RasterF
         }
     }
     // ========== Process bombs ==========
-    for (uint32_t curBomb = 0; curBomb < game.activeBombs; curBomb++) {
+    for (int32_t curBomb = game.activeBombs-1; curBomb >= 0; curBomb--) {
         // ========== Move bombs ==========
         gameBombMove(game.bombs[curBomb]);
         // shotHit prevents multi-kills
@@ -555,7 +583,7 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game, const RasterF
         }
     }
     // ========== Remove explosions at the end of their animation ==========
-    for (uint32_t curExpl = 0; curExpl < game.activeExplosions; curExpl++) {
+    for (int32_t curExpl = game.activeExplosions-1; curExpl >= 0; curExpl--) {
         if (game.explosions[curExpl].frame == EXPLOSION_FRAME_COUNT) {
             // Swap current explosion with the last
             std::swap(game.explosions[curExpl], game.explosions[game.activeExplosions-1]);
@@ -666,6 +694,19 @@ inline void gameEnemyKill(GameData& game, uint32_t curEnemy) {
     game.activeEnemies -= 1;
 }
 
+inline void gameBombSpawn(GameBomb& bomb) {
+    int32_t x = -15;
+    int32_t y = SDL_rand(VIEW_HEIGHT - 24) + 8;
+    Speed speedX {1};
+    speedX.reverseDirection = (x < 0);
+    Speed speedY {1};
+    bomb.rect = {
+        x, y, 16, 16
+    };
+    bomb.speedX = speedX;
+    bomb.speedY = speedY;
+}
+
 inline void gameBombMove(GameBomb& bomb) {
     #define BOTTOM_EDGE VIEW_HEIGHT - 16
     if (bomb.rect.y <= 0 || bomb.rect.y >= BOTTOM_EDGE) {
@@ -681,6 +722,7 @@ inline void gameBombKill(GameData& game, uint32_t curBomb) {
         game.bombs[curBomb].rect, // rect (copy from bomb)
         0 // frame
     };
+    game.activeExplosions += 1;
     for (uint32_t curEnemy = 0; curEnemy < game.activeEnemies; curEnemy++) {
         // Explode ALL the enemies >:)
         game.explosions[game.activeExplosions] = {
@@ -691,6 +733,8 @@ inline void gameBombKill(GameData& game, uint32_t curBomb) {
     }
     game.killedEnemies += game.activeEnemies;
     game.activeEnemies = 0;
+    std::swap(game.bombs[curBomb], game.bombs[game.activeBombs-1]);
+    game.activeBombs -= 1;
 }
 
 inline void frameGameWin() {
