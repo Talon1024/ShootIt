@@ -338,8 +338,8 @@ inline void frameLoadFail();
 inline void frameLoadSuccess();
 inline void frameWaitingToStart(SDL_Texture** textures, const RasterFont& font);
 inline void frameGamePlay(SDL_Texture** resources, GameData& game, const RasterFont& font);
-inline void frameGameWin();
-inline void frameGameLoss();
+inline void frameGameWin(SDL_Texture** textures, const RasterFont& font);
+inline void frameGameLoss(SDL_Texture** textures, const RasterFont& font);
 inline void gameNew(GameData& game, const float& difficulty);
 
 /* This function runs once per frame, and is the heart of the program.
@@ -396,14 +396,14 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     case GameState::Win:
         if (!drawn) {
             signalDone(1);
-            frameGameWin();
+            frameGameWin(resources, font);
             drawn = true;
         }
         break;
     case GameState::Loss:
         if (!drawn) {
             signalDone(0);
-            frameGameLoss();
+            frameGameLoss(resources, font);
             drawn = true;
         }
         break;
@@ -737,15 +737,15 @@ inline void gameBombKill(GameData& game, uint32_t curBomb) {
     game.activeBombs -= 1;
 }
 
-inline void frameGameWin() {
-    SDL_SetRenderDrawColor(renderer, 0, 180, 0, 255);
-    SDL_RenderClear(renderer);
+inline void frameGameWin(SDL_Texture** textures, const RasterFont& font) {
+    SDL_RenderTexture(renderer, textures[ASSET_BG], nullptr, nullptr);
+    font.drawText("Mr. Green is safe!", 70.0, 75.0);
     SDL_RenderPresent(renderer);
 }
 
-inline void frameGameLoss() {
-    SDL_SetRenderDrawColor(renderer, 180, 0, 0, 255);
-    SDL_RenderClear(renderer);
+inline void frameGameLoss(SDL_Texture** textures, const RasterFont& font) {
+    SDL_RenderTexture(renderer, textures[ASSET_BG], nullptr, nullptr);
+    font.drawText("Mr. Green died...", 70.0, 75.0);
     SDL_RenderPresent(renderer);
 }
 
