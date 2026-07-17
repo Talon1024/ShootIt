@@ -39,7 +39,7 @@ if [[ -z $EMSDK ]]; then
     source ~/misc/emsdk/emsdk_env.sh
 fi
 
-emcmake cmake -B wbuild "${emrun:+-DEMRUN=1}" . || exit 1 && \
+emcmake cmake -B wbuild "${emrun:+-DEMRUN=1}" "${emrun:+-DCMAKE_BUILD_TYPE=Debug}" . || exit 1 && \
     cd wbuild && \
     emmake make "-j$(nproc)" || exit 1 && \
     ln -sr ../assets assets && \

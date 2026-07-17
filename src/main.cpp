@@ -74,9 +74,10 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     }
 
     {
-        uint32_t assetIndex = 0;
-        for (const char* asset : assets) {
-            if (!loadAssetAsync(asset, assetIndex++)) {
+        for (uint32_t assetIndex = 0; assetIndex < TOTAL_ASSET_COUNT; assetIndex++) {
+            const char* fname = assets[assetIndex];
+            uint32_t index = assetindices[assetIndex];
+            if (!loadAssetAsync(fname, index)) {
                 return SDL_APP_FAILURE;
             }
         }
@@ -332,8 +333,14 @@ struct GameData {
     uint32_t second;
 };
 
+struct SoundResources {
+    SDL_AudioSpec specs[SFX_ASSET_COUNT];
+    uint8_t* buffers[SFX_ASSET_COUNT];
+    uint32_t lengths[SFX_ASSET_COUNT];
+};
+
 // Functions called during various loading/game states
-inline void frameLoading(SDL_Texture** textures, LoadState& loadState, RasterFont& font);
+inline void frameLoading(SDL_Texture** textures, SoundResources& sounds, LoadState& loadState, RasterFont& font);
 inline void frameLoadFail();
 inline void frameLoadSuccess();
 inline void frameWaitingToStart(SDL_Texture** textures, const RasterFont& font);
@@ -349,7 +356,8 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 {
     // The "static" keyword makes these variables global, but only accessible
     // within the scope of this function.
-    static SDL_Texture* resources[TOTAL_ASSET_COUNT] = {};
+    static SDL_Texture* resources[GFX_ASSET_COUNT] = {};
+    static SoundResources sounds = {};
     static LoadState loadState = LoadState::Loading;
     static GameState gameState = GameState::Loading;
     static RasterFont font(resources);
@@ -420,7 +428,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     case GameState::Loading:
         switch (loadState) {
         case LoadState::Loading:
-            frameLoading(resources, loadState, font);
+            frameLoading(resources, sounds, loadState, font);
             break;
         case LoadState::Failure:
             frameLoadFail();
@@ -762,21 +770,23 @@ inline void frameGameLoss(SDL_Texture** textures, const RasterFont& font) {
 // 120 - 10 = 110
 static const SDL_FRect loadRect {110., 110., 20., 20.};
 
+#define CLOSE_FILE 0xDEADBEEF
+
 // "textures" is filled in with the successfully loaded textures
 // "loadState" is filled in with success or failure
 // "font" has assets assigned to bytes as the character images are loaded
-inline void frameLoading(SDL_Texture** textures, LoadState& loadState, RasterFont& font) {
+inline void frameLoading(SDL_Texture** textures, SoundResources& sounds, LoadState& loadState, RasterFont& font) {
     static uint32_t assetsLoaded = 0;
     SDL_AsyncIOOutcome outcome;
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     if (SDL_GetAsyncIOResult(queue, &outcome)) {
         uint32_t assetIndex = *(uint32_t*)outcome.userdata;
-        if (outcome.result == SDL_ASYNCIO_COMPLETE) {
+        if (outcome.result == SDL_ASYNCIO_COMPLETE && assetIndex != CLOSE_FILE) {
             SDL_IOStream* dataStream = SDL_IOFromConstMem(
                 outcome.buffer,
                 (size_t) outcome.bytes_transferred
             );
-            if (SDL_Surface* surf = SDL_LoadPNG_IO(dataStream, true)) {
+            if (SDL_Surface* surf = SDL_LoadPNG_IO(dataStream, false)) {
                 font.assignAsset(assetIndex, outcome);
                 if (surf) {
                     textures[assetIndex] = SDL_CreateTextureFromSurface(renderer, surf);
@@ -790,13 +800,18 @@ inline void frameLoading(SDL_Texture** textures, LoadState& loadState, RasterFon
                     loadState = LoadState::Failure;
                 }
                 assetsLoaded++;
-            } // TODO?: other asset file formats
+            } else if (SDL_LoadWAV_IO(dataStream, false, &sounds.specs[assetIndex], &sounds.buffers[assetIndex], &sounds.lengths[assetIndex])) {
+                assetsLoaded++;
+            } else {
+                SDL_Log("%s", SDL_GetError());
+            }
             SDL_free(outcome.buffer);
-        } else if (outcome.result == SDL_ASYNCIO_FAILURE) {
+            SDL_CloseAsyncIO(outcome.asyncio, true, queue, new uint32_t {CLOSE_FILE});
+        } else if (outcome.result == SDL_ASYNCIO_FAILURE && assetIndex != CLOSE_FILE) {
             SDL_Log("Could not load asset %s: %s", assets[assetIndex], SDL_GetError());
             loadState = LoadState::Failure;
         }
-        if (assetsLoaded == TOTAL_ASSET_COUNT) {
+        if (assetsLoaded == GFX_ASSET_COUNT) {
             // finished loading!
             loadState = LoadState::Success;
         }
