@@ -76,8 +76,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     {
         for (uint32_t assetIndex = 0; assetIndex < TOTAL_ASSET_COUNT; assetIndex++) {
             const char* fname = assets[assetIndex];
-            uint32_t index = assetindices[assetIndex];
-            if (!loadAssetAsync(fname, index)) {
+            if (!loadAssetAsync(fname, assetIndex)) {
                 return SDL_APP_FAILURE;
             }
         }
@@ -97,7 +96,7 @@ uint32_t getPrimaryDisplay() {
     return primaryDisplayId;
 }
 
-bool loadAssetAsync(const char* asset, uint32_t index) {
+inline bool loadAssetAsync(const char* asset, uint32_t index) {
     char* fullpath;
     SDL_asprintf(&fullpath, "%s/%s", SDL_GetBasePath(), asset);
     // It's much faster to store the asset index, since, that way, one can refer
@@ -770,8 +769,6 @@ inline void frameGameLoss(SDL_Texture** textures, const RasterFont& font) {
 // 120 - 10 = 110
 static const SDL_FRect loadRect {110., 110., 20., 20.};
 
-#define CLOSE_FILE 0xDEADBEEF
-
 // "textures" is filled in with the successfully loaded textures
 // "loadState" is filled in with success or failure
 // "font" has assets assigned to bytes as the character images are loaded
@@ -781,33 +778,33 @@ inline void frameLoading(SDL_Texture** textures, SoundResources& sounds, LoadSta
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     if (SDL_GetAsyncIOResult(queue, &outcome)) {
         uint32_t assetIndex = *(uint32_t*)outcome.userdata;
-        if (outcome.result == SDL_ASYNCIO_COMPLETE && assetIndex != CLOSE_FILE) {
+        if (outcome.result == SDL_ASYNCIO_COMPLETE) {
             SDL_IOStream* dataStream = SDL_IOFromConstMem(
                 outcome.buffer,
                 (size_t) outcome.bytes_transferred
             );
             if (SDL_Surface* surf = SDL_LoadPNG_IO(dataStream, false)) {
                 font.assignAsset(assetIndex, outcome);
-                if (surf) {
-                    textures[assetIndex] = SDL_CreateTextureFromSurface(renderer, surf);
-                    if (!textures[assetIndex]) {
-                        SDL_Log("Couldn't create texture! %s", SDL_GetError());
-                        loadState = LoadState::Failure;
-                    }
-                    SDL_DestroySurface(surf);
-                } else {
-                    SDL_Log("Could not read PNG %s: %s", assets[assetIndex], SDL_GetError());
+                textures[assetIndex] = SDL_CreateTextureFromSurface(renderer, surf);
+                if (!textures[assetIndex]) {
+                    SDL_Log("Couldn't create texture! %s", SDL_GetError());
                     loadState = LoadState::Failure;
                 }
-                assetsLoaded++;
-            } else if (SDL_LoadWAV_IO(dataStream, false, &sounds.specs[assetIndex], &sounds.buffers[assetIndex], &sounds.lengths[assetIndex])) {
+                SDL_DestroySurface(surf);
                 assetsLoaded++;
             } else {
+                assetIndex -= GFX_ASSET_COUNT;
+                if (SDL_LoadWAV_IO(dataStream, false, &sounds.specs[assetIndex], &sounds.buffers[assetIndex], &sounds.lengths[assetIndex])) {
+                    assetsLoaded++;
+                }
+            } /*else {
                 SDL_Log("%s", SDL_GetError());
-            }
+                loadState = LoadState::Failure;
+            }*/
             SDL_free(outcome.buffer);
-            SDL_CloseAsyncIO(outcome.asyncio, true, queue, new uint32_t {CLOSE_FILE});
-        } else if (outcome.result == SDL_ASYNCIO_FAILURE && assetIndex != CLOSE_FILE) {
+            // Part of SDL_LoadFileAsync
+            // SDL_CloseAsyncIO(outcome.asyncio, true, queue, new uint32_t {CLOSE_FILE});
+        } else if (outcome.result == SDL_ASYNCIO_FAILURE) {
             SDL_Log("Could not load asset %s: %s", assets[assetIndex], SDL_GetError());
             loadState = LoadState::Failure;
         }

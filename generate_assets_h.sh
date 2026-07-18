@@ -31,12 +31,6 @@ $(print ${(F)gfx[@]} | sed -E 's@^(.+)$@    "\1",@g')
 $(print ${(F)fontchars[@]} | sed -E 's@^(.+)$@    "\1",@g')
 $(print ${(F)sfx[@]} | sed -E 's@^(.+)$@    "\1",@g')
 };
-static const uint32_t assetindices[TOTAL_ASSET_COUNT] = {
-// gfx
-$(for x in {0..$((gfx_asset_count-1))}; do print "$x,"; done)
-// sfx
-$(for x in {0..$((sfx_asset_count-1))}; do print "$x,"; done)
-};
 ${assetdefines}
 static const size_t char_to_asset[256] = {
 $(for byte in {0..255}; do printf -v fname assets/minifont/%04X.png ${byte}; if [[ -f ${fname} ]] { print -n "$((${#gfx}+${fontchars[(i)${fname}]}-1))" } else { print -n '0' }; print ','; done)

@@ -66,6 +66,6 @@ public:
 
 uint32_t getPrimaryDisplay();
 SDL_Texture* loadAsset(SDL_Renderer* renderer, const char* fname);
-bool loadAssetAsync(const char* asset, uint32_t index);
+inline bool loadAssetAsync(const char* asset, uint32_t index);
 int32_t getPNGYOffset(void* bufdata, size_t bufsize);
 inline bool isPNG(void* data);
