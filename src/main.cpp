@@ -808,7 +808,7 @@ inline void frameLoading(SDL_Texture** textures, SoundResources& sounds, LoadSta
             SDL_Log("Could not load asset %s: %s", assets[assetIndex], SDL_GetError());
             loadState = LoadState::Failure;
         }
-        if (assetsLoaded == GFX_ASSET_COUNT) {
+        if (assetsLoaded == TOTAL_ASSET_COUNT) {
             // finished loading!
             loadState = LoadState::Success;
         }
