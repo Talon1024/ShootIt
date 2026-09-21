@@ -47,6 +47,11 @@ enum class GameState {
 #define MAX_EVENTS 32  // Maximum number of spawn events to generate
 #define MAX_TICK 1500  // A little less than 20 seconds
 
+struct DataBuffer {
+    void* buffer;
+    size_t bytes_transferred;
+};
+
 // Data for a raster font
 class RasterFont {
 private:
@@ -61,7 +66,7 @@ private:
 public:
     RasterFont(SDL_Texture** textures) : charInfo{}, textures(textures) {}
     void drawText(const char* text, float x, float y) const;
-    bool assignAsset(uint32_t assetIndex, const SDL_AsyncIOOutcome& outcome);
+    bool assignAsset(uint32_t assetIndex, const DataBuffer& data);
 };
 
 uint32_t getPrimaryDisplay();

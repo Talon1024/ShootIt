@@ -27,7 +27,9 @@
 #include <cstring>
 #include <array>
 #include <utility> // for the 'swap' function
+#ifdef EMSCRIPTEN
 #include <emscripten.h>
+#endif
 #include "main.h"
 #include "assets.h"
 
@@ -41,7 +43,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 {
     SDL_SetAppMetadata("Shoot It!", "0.0", "io.github.Talon1024.ShootIt");
 
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
+    if (!SDL_Init(SDL_INIT_VIDEO))
+    {
         SDL_Log("Couldn't initialize SDL: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
@@ -50,16 +53,19 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 #if not(__EMSCRIPTEN__)
     uint32_t primaryDisplayId = getPrimaryDisplay();
 
-    if (primaryDisplayId == 0) {
+    if (primaryDisplayId == 0)
+    {
         SDL_Log("No display found!");
         return SDL_APP_FAILURE;
     }
 
-    if (!SDL_GetDisplayBounds(primaryDisplayId, &screenRect)) {
+    if (!SDL_GetDisplayBounds(primaryDisplayId, &screenRect))
+    {
         SDL_Log("Could not get primary display size.");
     }
 #endif
-    if (!SDL_CreateWindowAndRenderer("Shoot It!", screenRect.w, screenRect.h, SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_FILL_DOCUMENT, &window, &renderer)) {
+    if (!SDL_CreateWindowAndRenderer("Shoot It!", screenRect.w, screenRect.h, SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_FILL_DOCUMENT, &window, &renderer))
+    {
         SDL_Log("Couldn't create window/renderer: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
@@ -68,15 +74,18 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     SDL_HideCursor();
 
     queue = SDL_CreateAsyncIOQueue();
-    if (!queue) {
+    if (!queue)
+    {
         SDL_Log("Couldn't create async i/o queue: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
 
     {
-        for (uint32_t assetIndex = 0; assetIndex < TOTAL_ASSET_COUNT; assetIndex++) {
+        for (uint32_t assetIndex = 0; assetIndex < TOTAL_ASSET_COUNT; assetIndex++)
+        {
             const char* fname = assets[assetIndex];
-            if (!loadAssetAsync(fname, assetIndex)) {
+            if (!loadAssetAsync(fname, assetIndex))
+            {
                 return SDL_APP_FAILURE;
             }
         }
@@ -85,24 +94,28 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     return SDL_APP_CONTINUE;  /* carry on with the program! */
 }
 
-uint32_t getPrimaryDisplay() {
+uint32_t getPrimaryDisplay()
+{
     int numDisplays;
     uint32_t primaryDisplayId = 0;
     uint32_t* displays = SDL_GetDisplays(&numDisplays);
-    if (numDisplays > 0) {
+    if (numDisplays > 0)
+    {
         primaryDisplayId = *displays; // Deref (copy) the first element.
     }
     SDL_free(displays);
     return primaryDisplayId;
 }
 
-inline bool loadAssetAsync(const char* asset, uint32_t index) {
+inline bool loadAssetAsync(const char* asset, uint32_t index)
+{
     char* fullpath;
     SDL_asprintf(&fullpath, "%s/%s", SDL_GetBasePath(), asset);
     // It's much faster to store the asset index, since, that way, one can refer
     // directly to its slot instead of searching for it.
     bool result = SDL_LoadFileAsync(fullpath, queue, new uint32_t {index});
-    if (!result) {
+    if (!result)
+    {
         SDL_Log("Unable to load asset %s: %s", asset, SDL_GetError());
     }
     SDL_free(fullpath);
@@ -112,19 +125,22 @@ inline bool loadAssetAsync(const char* asset, uint32_t index) {
 /* This function runs when a new event (mouse input, keypresses, etc) occurs. */
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 {
-    if (event->type == SDL_EVENT_QUIT) {
+    if (event->type == SDL_EVENT_QUIT)
+    {
         return SDL_APP_SUCCESS; // end the program, reporting success to the OS.
     }
     return SDL_APP_CONTINUE;  /* carry on with the program! */
 }
 
-int32_t getPNGYOffset(void* bufdata, size_t bufsize) {
+int32_t getPNGYOffset(void* bufdata, size_t bufsize)
+{
     // Search for the grAb chunk - the sprite offsets for ZDoom PNGs.
     char* idatStart = (char*) memmem(
         bufdata, bufsize,
         "IDAT", 4
     );
-    if (!idatStart) {
+    if (!idatStart)
+    {
         SDL_Log("Not a valid PNG!");
         return 0;
     }
@@ -134,7 +150,8 @@ int32_t getPNGYOffset(void* bufdata, size_t bufsize) {
         bufdata, grabHaystackSize,
         "grAb", 4
     );
-    if (!grabStart) {
+    if (!grabStart)
+    {
         return 0;
     }
     int32_t* offsets = grabStart + 1;
@@ -148,14 +165,20 @@ int32_t getPNGYOffset(void* bufdata, size_t bufsize) {
 void RasterFont::drawText(const char* text, float x, float y) const {
     size_t textLength = SDL_strlen(text);
     SDL_FRect charRect {x, y, 0.0, 0.0};
-    for (size_t pos = 0; pos < textLength; pos++) {
+    for (size_t pos = 0; pos < textLength; pos++)
+    {
         char curChar = text[pos];
         // Space to next character - 5 if space, width + 1 for kerning.
         size_t assetIndex = charInfo[curChar].asset;
-        if (curChar == ' ') {
+        if (curChar == ' ')
+        {
             charRect.x += SPACE_WIDTH;
             continue;
-        } else if (assetIndex == 0) { continue; }
+        }
+        else if (assetIndex == 0)
+        {
+            continue;
+        }
         charRect.w = charInfo[curChar].width;
         charRect.h = charInfo[curChar].height;
         charRect.y = y + charInfo[curChar].yoffset;
@@ -164,16 +187,20 @@ void RasterFont::drawText(const char* text, float x, float y) const {
     }
 }
 
-bool RasterFont::assignAsset(uint32_t assetIndex, const SDL_AsyncIOOutcome& outcome) {
+bool RasterFont::assignAsset(uint32_t assetIndex, const DataBuffer& data)
+{
     unsigned char cByte = asset_to_char[assetIndex];
-    if (cByte < 33) { return false; }
+    if (cByte < 33)
+    {
+        return false;
+    }
     // Set up font character
     // Read width and height from IHDR
-    uint32_t width = SDL_Swap32BE(*((uint32_t*)outcome.buffer + 4));
-    uint32_t height = SDL_Swap32BE(*((uint32_t*)outcome.buffer + 5));
+    uint32_t width = SDL_Swap32BE(*((uint32_t*)data.buffer + 4));
+    uint32_t height = SDL_Swap32BE(*((uint32_t*)data.buffer + 5));
     // Read Y offset from grAb chunk
     // https://zdoom.org/wiki/GrAb
-    int32_t yoffset = getPNGYOffset(outcome.buffer, (size_t) outcome.bytes_transferred);
+    int32_t yoffset = getPNGYOffset(data.buffer, (size_t) data.bytes_transferred);
     charInfo[cByte].asset = assetIndex;
     charInfo[cByte].width = (float) width;
     charInfo[cByte].height = (float) height;
@@ -181,10 +208,14 @@ bool RasterFont::assignAsset(uint32_t assetIndex, const SDL_AsyncIOOutcome& outc
     return true;
 }
 
+#ifdef EMSCRIPTEN
 EM_JS(void, signalReady, (float* pDifficulty, bool* pNewGame), {
     window.parent.postMessage({op: "ready"});
     window.addEventListener("message", ev => {
-        if ("op" in ev.data) { switch(ev.data.op) {
+        if ("op" in ev.data)
+        {
+            switch(ev.data.op)
+            {
             case "start":
                 console.log("Difficulty set to", ev.data.difficulty);
                 setValue(pDifficulty, ev.data.difficulty, "float");
@@ -203,6 +234,7 @@ EM_JS(void, signalStart, (), {
 EM_JS(void, signalDone, (int32_t won), {
     window.parent.postMessage({op: "done", win: !!won});
 });
+#endif
 
 enum class MovementPattern {
     Straight,
@@ -231,14 +263,19 @@ private:
     uint16_t lifetime : 9; // used for movement pattern
 };
 
-int32_t Speed::moveAmount() {
-    if (!onePixelPerXTics) {
+int32_t Speed::moveAmount()
+{
+    if (!onePixelPerXTics)
+    {
         // Pixels-per-tick movement
         return speedA * (2 * !!(reverseDirection) - 1);
-    } else {
+    }
+    else
+    {
         // Ticks-per-pixel movement
         uint8_t speed = useSpeedB ? speedB : speedA;
-        if (speed > 0 && speed == lifetime) { // Lifetime will be reset
+        if (speed > 0 && speed == lifetime) // Lifetime will be reset
+        {
             // P.S. I think I need a more accurately descriptive name than
             // "lifetime" :P
             // Alternate between the two speeds
@@ -246,7 +283,9 @@ int32_t Speed::moveAmount() {
             // Reset lifetime
             lifetime = 0;
             return 1 * (2 * !!(reverseDirection) - 1);
-        } else {
+        }
+        else
+        {
             lifetime += 1;
         }
     }
@@ -365,7 +404,8 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     static bool paused = false;
     static bool newGame = false;
     static float difficulty = 0.0;
-    if (newGame && loadState == LoadState::PostSuccess) {
+    if (newGame && loadState == LoadState::PostSuccess)
+    {
         SDL_Log("Starting a new game! (difficulty: %.3f)", difficulty);
         gameNew(game, difficulty);
         gameState = GameState::Play;
@@ -382,12 +422,15 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     cursorX = roundf(cursorX);
     cursorY = roundf(cursorY);
     */
-    switch (gameState) {
+    switch (gameState)
+    {
     case GameState::Play:
-        if ((SDL_GetTicks() - lastTickTime) > GAME_TICK_TIME_MS) {
+        if ((SDL_GetTicks() - lastTickTime) > GAME_TICK_TIME_MS)
+        {
             frameGamePlay(resources, game, font);
             lastTickTime = SDL_GetTicks();
-            switch(game.status) {
+            switch(game.status)
+            {
                 case GamePlayStatus::Win:
                     gameState = GameState::Win;
                     break;
@@ -401,14 +444,16 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         }
         break;
     case GameState::Win:
-        if (!drawn) {
+        if (!drawn)
+        {
             signalDone(1);
             frameGameWin(resources, font);
             drawn = true;
         }
         break;
     case GameState::Loss:
-        if (!drawn) {
+        if (!drawn)
+        {
             signalDone(0);
             frameGameLoss(resources, font);
             drawn = true;
@@ -418,14 +463,16 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         gameState = GameState::Play;  // Not doing this rn
         /*
         // Draw everything drawn in the 'play' state, and then "Paused" on top.
-        if (!drawn) {
+        if (!drawn)
+        {
             frameGamePlay(resources, game);
             font.drawText("Paused", 80, 80);
         }
         */
         break;
     case GameState::Loading:
-        switch (loadState) {
+        switch (loadState)
+        {
         case LoadState::Loading:
             frameLoading(resources, sounds, loadState, font);
             break;
@@ -446,7 +493,8 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         }
         break;
     case GameState::WaitingToStart:
-        if (!drawn) {
+        if (!drawn)
+        {
             frameWaitingToStart(resources, font);
             drawn = true;
         }
@@ -455,28 +503,38 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     return SDL_APP_CONTINUE;  /* carry on with the program! */
 }
 
-int SDLCALL sortEventByTick(const void* a, const void* b) {
+int SDLCALL sortEventByTick(const void* a, const void* b)
+{
     const GameEventSpawnEnemy* ea = (const GameEventSpawnEnemy*) a;
     const GameEventSpawnEnemy* eb = (const GameEventSpawnEnemy*) b;
-    if (eb->tick == 0 && ea->tick != 0) {
+    if (eb->tick == 0 && ea->tick != 0)
+    {
         return -1;
-    } else if (ea->tick == 0 && eb->tick != 0) {
+    }
+    else if (ea->tick == 0 && eb->tick != 0)
+    {
         return 1;
-    } else if (ea->tick < eb->tick) {
+    }
+    else if (ea->tick < eb->tick)
+    {
         return -1;
-    } else if (ea->tick > eb->tick) {
+    }
+    else if (ea->tick > eb->tick)
+    {
         return 1;
     }
     return 0;
 }
 
-inline void gameNew(GameData& game, const float& difficulty) {
+inline void gameNew(GameData& game, const float& difficulty)
+{
     game.totalEnemies = 0; // Do this first so that I can add to it in the loop.
     // ========== Set up enemy spawns ==========
     uint32_t numEvents = SDL_min(MAX_EVENTS, SDL_max(1, MAX_EVENTS * difficulty / 100.0));
     {
         GameEventSpawnEnemy* event = game.events.data();
-        for (uint32_t curEventId = 0; curEventId < numEvents; curEventId++) {
+        for (uint32_t curEventId = 0; curEventId < numEvents; curEventId++)
+        {
             event->tick = SDL_rand(MAX_TICK - 75 * 5) + 1;
             event->count = SDL_rand(SDL_min(3, uint32_t(difficulty / 30.0))) + 1;
             game.totalEnemies += event->count;
@@ -489,17 +547,20 @@ inline void gameNew(GameData& game, const float& difficulty) {
     game.lastEvent = game.events.data() + numEvents;
     // Ensure events are sorted by tick
     // SDL_Log("Event ticks:");
-    // for (uint32_t index = 0; index < numEvents; index++) {
+    // for (uint32_t index = 0; index < numEvents; index++)
+    // {
     //     SDL_Log("%u", game.events[index].tick);
     // }
     // Bomb spawns should start at difficulty 60
     uint32_t numBombSpawns = SDL_min(MAX_EVENTS, SDL_max(0, difficulty / 10.0 - 5.0));
     {
         GameEventSpawnBomb* bombSpawn = game.bombSpawns.data();
-        if (numBombSpawns > 0) {
+        if (numBombSpawns > 0)
+        {
             // Make bomb spawns evenly spaced for time
             uint32_t interval = MAX_TICK / (numBombSpawns+1);
-            for (uint32_t curEventId = 1; curEventId <= numBombSpawns; curEventId++) {
+            for (uint32_t curEventId = 1; curEventId <= numBombSpawns; curEventId++)
+            {
                 bombSpawn->tick = interval * curEventId;
                 bombSpawn += 1;
             }
@@ -535,7 +596,8 @@ inline void gameBombMove(GameBomb& bomb);
 inline void gameBombKill(GameData& game, uint32_t curBomb);
 
 // Render the game every tic
-inline void frameGamePlay(SDL_Texture** resources, GameData& game, const RasterFont& font) {
+inline void frameGamePlay(SDL_Texture** resources, GameData& game, const RasterFont& font)
+{
     SDL_FRect renderRect;
     SDL_Rect collision;
     // ========== Get mouse position ==========
@@ -551,60 +613,74 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game, const RasterF
     game.cursor.x = game.cursorf.x;
     game.cursor.y = game.cursorf.y;
     // ========== Go through events ==========
-    if (game.curEvent < game.lastEvent && game.curEvent->tick <= game.tick) {
+    if (game.curEvent < game.lastEvent && game.curEvent->tick <= game.tick)
+    {
         SDL_Log("Spawn event at tick %d", game.curEvent->tick);
-        for (uint32_t spawnNum = 0; spawnNum < game.curEvent->count; spawnNum++) {
+        for (uint32_t spawnNum = 0; spawnNum < game.curEvent->count; spawnNum++)
+        {
             gameEnemySpawn(game.enemies[game.activeEnemies], game.theFriend.rect);
             game.activeEnemies += 1;
         }
         game.curEvent += 1;
     }
-    if (game.curBombSpawn < game.lastBombSpawn && game.curBombSpawn->tick <= game.tick) {
+    if (game.curBombSpawn < game.lastBombSpawn && game.curBombSpawn->tick <= game.tick)
+    {
         SDL_Log("Bomb spawn event at tick %d", game.curEvent->tick);
         gameBombSpawn(game.bombs[game.activeBombs]);
         game.activeBombs += 1;
         game.curBombSpawn += 1;
     }
     // ========== Process enemies ==========
-    for (int32_t curEnemy = game.activeEnemies-1; curEnemy >= 0; curEnemy--) {
+    for (int32_t curEnemy = game.activeEnemies-1; curEnemy >= 0; curEnemy--)
+    {
         // ========== Move enemies ==========
         gameEnemyMove(game.enemies[curEnemy]);
         // ========== Check for collisions with Mr. Green ==========
-        if (SDL_GetRectIntersection(&game.enemies[curEnemy].rect, &game.theFriend.rect, &collision)) {
+        if (SDL_GetRectIntersection(&game.enemies[curEnemy].rect, &game.theFriend.rect, &collision))
+        {
             game.status = GamePlayStatus::Loss;
         }
         // shotHit prevents multi-kills
-        if (shoot && !shotHit && SDL_PointInRect(&game.cursor, &game.enemies[curEnemy].rect)) {
+        if (shoot && !shotHit && SDL_PointInRect(&game.cursor, &game.enemies[curEnemy].rect))
+        {
             gameEnemyKill(game, curEnemy);
             shotHit = true;
         }
     }
     // ========== Process bombs ==========
-    for (int32_t curBomb = game.activeBombs-1; curBomb >= 0; curBomb--) {
+    for (int32_t curBomb = game.activeBombs-1; curBomb >= 0; curBomb--)
+    {
         // ========== Move bombs ==========
         gameBombMove(game.bombs[curBomb]);
         // shotHit prevents multi-kills
-        if (shoot && !shotHit && SDL_PointInRect(&game.cursor, &game.bombs[curBomb].rect)) {
+        if (shoot && !shotHit && SDL_PointInRect(&game.cursor, &game.bombs[curBomb].rect))
+        {
             gameBombKill(game, curBomb);
             shotHit = true;
         }
     }
     // ========== Remove explosions at the end of their animation ==========
-    for (int32_t curExpl = game.activeExplosions-1; curExpl >= 0; curExpl--) {
-        if (game.explosions[curExpl].frame == EXPLOSION_FRAME_COUNT) {
+    for (int32_t curExpl = game.activeExplosions-1; curExpl >= 0; curExpl--)
+    {
+        if (game.explosions[curExpl].frame == EXPLOSION_FRAME_COUNT)
+        {
             // Swap current explosion with the last
             std::swap(game.explosions[curExpl], game.explosions[game.activeExplosions-1]);
             // and remove it
             game.activeExplosions -= 1;
         }
     }
-    if (game.tick % 75 == 0) {
+    if (game.tick % 75 == 0)
+    {
         game.second -= 1;
     }
     // ========== Check for win/loss ==========
-    if (game.killedEnemies == game.totalEnemies) {
+    if (game.killedEnemies == game.totalEnemies)
+    {
         game.status = GamePlayStatus::Win;
-    } else if (game.tick > MAX_TICK) {
+    }
+    else if (game.tick > MAX_TICK)
+    {
         game.status = GamePlayStatus::Loss;
     }
     // ========== Render background ==========
@@ -615,18 +691,21 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game, const RasterF
     SDL_RectToFRect(&game.theFriend.rect, &renderRect);
     SDL_RenderTexture(renderer, resources[ASSET_F_FRIEND], nullptr, &renderRect);
     // Foes
-    for (uint32_t curEnemy = 0; curEnemy < game.activeEnemies; curEnemy++) {
+    for (uint32_t curEnemy = 0; curEnemy < game.activeEnemies; curEnemy++)
+    {
         SDL_RectToFRect(&game.enemies[curEnemy].rect, &renderRect);
         SDL_RenderTexture(renderer, resources[ASSET_F_ENEMY], nullptr, &renderRect);
     }
     // Explosions
-    for (uint32_t curExpl = 0; curExpl < game.activeExplosions; curExpl++) {
+    for (uint32_t curExpl = 0; curExpl < game.activeExplosions; curExpl++)
+    {
         SDL_RectToFRect(&game.explosions[curExpl].rect, &renderRect);
         SDL_RenderTexture(renderer, resources[explosionFrames[game.explosions[curExpl].frame]], nullptr, &renderRect);
         game.explosions[curExpl].frame += 1;
     }
     // Bombs
-    for (uint32_t curBomb = 0; curBomb < game.activeBombs; curBomb++) {
+    for (uint32_t curBomb = 0; curBomb < game.activeBombs; curBomb++)
+    {
         SDL_RectToFRect(&game.bombs[curBomb].rect, &renderRect);
         SDL_RenderTexture(renderer, resources[ASSET_F_BOMB], nullptr, &renderRect);
     }
@@ -646,7 +725,8 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game, const RasterF
     game.tick += 1;
 }
 
-void gameEnemySpawn(GameEnemy& enemy, const SDL_Rect friendRect) {
+void gameEnemySpawn(GameEnemy& enemy, const SDL_Rect friendRect)
+{
     // WIP!
     int32_t x = -15;
     int32_t y = SDL_rand(VIEW_HEIGHT - 24) + 8;
@@ -682,12 +762,14 @@ void gameEnemySpawn(GameEnemy& enemy, const SDL_Rect friendRect) {
     };
 }
 
-inline void gameEnemyMove(GameEnemy& enemy) {
+inline void gameEnemyMove(GameEnemy& enemy)
+{
     enemy.rect.x += enemy.speedX.moveAmount();
     enemy.rect.y += enemy.speedY.moveAmount();
 }
 
-inline void gameEnemyKill(GameData& game, uint32_t curEnemy) {
+inline void gameEnemyKill(GameData& game, uint32_t curEnemy)
+{
     // Add an explosion where this enemy once was
     game.explosions[game.activeExplosions] = {
         game.enemies[curEnemy].rect, // rect (copy from enemy)
@@ -701,7 +783,8 @@ inline void gameEnemyKill(GameData& game, uint32_t curEnemy) {
     game.activeEnemies -= 1;
 }
 
-inline void gameBombSpawn(GameBomb& bomb) {
+inline void gameBombSpawn(GameBomb& bomb)
+{
     int32_t x = -15;
     int32_t y = SDL_rand(VIEW_HEIGHT - 24) + 8;
     Speed speedX {1};
@@ -714,9 +797,11 @@ inline void gameBombSpawn(GameBomb& bomb) {
     bomb.speedY = speedY;
 }
 
-inline void gameBombMove(GameBomb& bomb) {
+inline void gameBombMove(GameBomb& bomb)
+{
     #define BOTTOM_EDGE VIEW_HEIGHT - 16
-    if (bomb.rect.y <= 0 || bomb.rect.y >= BOTTOM_EDGE) {
+    if (bomb.rect.y <= 0 || bomb.rect.y >= BOTTOM_EDGE)
+{
         bomb.speedY.reverseDirection = !bomb.speedY.reverseDirection;
     }
     // move
@@ -724,13 +809,15 @@ inline void gameBombMove(GameBomb& bomb) {
     bomb.rect.y += bomb.speedY.moveAmount();
 }
 
-inline void gameBombKill(GameData& game, uint32_t curBomb) {
+inline void gameBombKill(GameData& game, uint32_t curBomb)
+{
     game.explosions[game.activeExplosions] = {
         game.bombs[curBomb].rect, // rect (copy from bomb)
         0 // frame
     };
     game.activeExplosions += 1;
-    for (uint32_t curEnemy = 0; curEnemy < game.activeEnemies; curEnemy++) {
+    for (uint32_t curEnemy = 0; curEnemy < game.activeEnemies; curEnemy++)
+    {
         // Explode ALL the enemies >:)
         game.explosions[game.activeExplosions] = {
             game.enemies[curEnemy].rect, // rect (copy from enemy)
@@ -744,13 +831,15 @@ inline void gameBombKill(GameData& game, uint32_t curBomb) {
     game.activeBombs -= 1;
 }
 
-inline void frameGameWin(SDL_Texture** textures, const RasterFont& font) {
+inline void frameGameWin(SDL_Texture** textures, const RasterFont& font)
+{
     SDL_RenderTexture(renderer, textures[ASSET_BG], nullptr, nullptr);
     font.drawText("Mr. Green is safe!", 70.0, 75.0);
     SDL_RenderPresent(renderer);
 }
 
-inline void frameGameLoss(SDL_Texture** textures, const RasterFont& font) {
+inline void frameGameLoss(SDL_Texture** textures, const RasterFont& font)
+{
     SDL_RenderTexture(renderer, textures[ASSET_BG], nullptr, nullptr);
     font.drawText("Mr. Green died...", 70.0, 75.0);
     SDL_RenderPresent(renderer);
@@ -769,46 +858,42 @@ inline void frameGameLoss(SDL_Texture** textures, const RasterFont& font) {
 // 120 - 10 = 110
 static const SDL_FRect loadRect {110., 110., 20., 20.};
 
+struct LoadedAsset {
+    uint32_t index;
+    DataBuffer data;
+};
+
+void fileLoaded(const LoadedAsset& asset, SDL_Texture** textures, SoundResources& sounds, RasterFont& font, uint32_t& assetsLoaded, LoadState& loadState);
+
 // "textures" is filled in with the successfully loaded textures
 // "loadState" is filled in with success or failure
 // "font" has assets assigned to bytes as the character images are loaded
-inline void frameLoading(SDL_Texture** textures, SoundResources& sounds, LoadState& loadState, RasterFont& font) {
+inline void frameLoading(SDL_Texture** textures, SoundResources& sounds, LoadState& loadState, RasterFont& font)
+{
     static uint32_t assetsLoaded = 0;
     SDL_AsyncIOOutcome outcome;
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    if (SDL_GetAsyncIOResult(queue, &outcome)) {
+    if (SDL_GetAsyncIOResult(queue, &outcome))
+    {
         uint32_t assetIndex = *(uint32_t*)outcome.userdata;
-        if (outcome.result == SDL_ASYNCIO_COMPLETE) {
-            SDL_IOStream* dataStream = SDL_IOFromConstMem(
-                outcome.buffer,
-                (size_t) outcome.bytes_transferred
-            );
-            if (SDL_Surface* surf = SDL_LoadPNG_IO(dataStream, false)) {
-                font.assignAsset(assetIndex, outcome);
-                textures[assetIndex] = SDL_CreateTextureFromSurface(renderer, surf);
-                if (!textures[assetIndex]) {
-                    SDL_Log("Couldn't create texture! %s", SDL_GetError());
-                    loadState = LoadState::Failure;
-                }
-                SDL_DestroySurface(surf);
-                assetsLoaded++;
-            } else {
-                assetIndex -= GFX_ASSET_COUNT;
-                if (SDL_LoadWAV_IO(dataStream, false, &sounds.specs[assetIndex], &sounds.buffers[assetIndex], &sounds.lengths[assetIndex])) {
-                    assetsLoaded++;
-                }
-            } /*else {
-                SDL_Log("%s", SDL_GetError());
-                loadState = LoadState::Failure;
-            }*/
-            SDL_free(outcome.buffer);
+        if (outcome.result == SDL_ASYNCIO_COMPLETE)
+        {
+            LoadedAsset asset {
+                assetIndex,
+                {outcome.buffer,
+                static_cast<size_t>(outcome.bytes_transferred)}
+            };
+            fileLoaded(asset, textures, sounds, font, assetsLoaded, loadState);
             // Part of SDL_LoadFileAsync
             // SDL_CloseAsyncIO(outcome.asyncio, true, queue, new uint32_t {CLOSE_FILE});
-        } else if (outcome.result == SDL_ASYNCIO_FAILURE) {
+        }
+        else if (outcome.result == SDL_ASYNCIO_FAILURE)
+        {
             SDL_Log("Could not load asset %s: %s", assets[assetIndex], SDL_GetError());
             loadState = LoadState::Failure;
         }
-        if (assetsLoaded == TOTAL_ASSET_COUNT) {
+        if (assetsLoaded == TOTAL_ASSET_COUNT)
+        {
             // finished loading!
             loadState = LoadState::Success;
         }
@@ -828,7 +913,41 @@ inline void frameLoading(SDL_Texture** textures, SoundResources& sounds, LoadSta
     SDL_RenderPresent(renderer);
 }
 
-inline void frameLoadFail() {
+void fileLoaded(const LoadedAsset& asset, SDL_Texture** textures, SoundResources& sounds, RasterFont& font, uint32_t& assetsLoaded, LoadState& loadState)
+{
+    SDL_IOStream* dataStream = SDL_IOFromConstMem(
+        asset.data.buffer,
+        (size_t) asset.data.bytes_transferred
+    );
+    if (SDL_Surface* surf = SDL_LoadPNG_IO(dataStream, false))
+    {
+        font.assignAsset(asset.index, asset.data);
+        textures[asset.index] = SDL_CreateTextureFromSurface(renderer, surf);
+        if (!textures[asset.index])
+        {
+            SDL_Log("Couldn't create texture! %s", SDL_GetError());
+            loadState = LoadState::Failure;
+        }
+        SDL_DestroySurface(surf);
+        assetsLoaded++;
+    }
+    else
+    {
+        uint32_t assetIndex = asset.index - GFX_ASSET_COUNT;
+        if (SDL_LoadWAV_IO(dataStream, false, &sounds.specs[assetIndex], &sounds.buffers[assetIndex], &sounds.lengths[assetIndex]))
+        {
+            assetsLoaded++;
+        }
+    } /*else
+{
+        SDL_Log("%s", SDL_GetError());
+        loadState = LoadState::Failure;
+    }*/
+    SDL_free(asset.data.buffer);
+}
+
+inline void frameLoadFail()
+{
     SDL_RenderClear(renderer);
     // Red square
     SDL_SetRenderDrawColor(renderer, 180, 0, 0, 255);
@@ -836,7 +955,8 @@ inline void frameLoadFail() {
     SDL_RenderPresent(renderer);
 }
 
-inline void frameLoadSuccess() {
+inline void frameLoadSuccess()
+{
     SDL_RenderClear(renderer);
     SDL_SetRenderDrawColor(renderer, 0, 180, 0, 255);
     SDL_RenderFillRect(renderer, &loadRect);
@@ -845,7 +965,8 @@ inline void frameLoadSuccess() {
 
 // "textures" is used to reference a texture
 // "font" is used to make it easier to reference font character textures
-inline void frameWaitingToStart(SDL_Texture** textures, const RasterFont& font) {
+inline void frameWaitingToStart(SDL_Texture** textures, const RasterFont& font)
+{
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);

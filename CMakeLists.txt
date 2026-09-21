@@ -14,6 +14,7 @@ target_link_libraries(Game ${SDL3_LIBRARIES})
 
 file(GLOB_RECURSE ASSETS LIST_DIRECTORIES false RELATIVE ${PROJECT_SOURCE_DIR} assets/*.png assets/*.wav)
 if(EMSCRIPTEN)
+    target_compile_definitions(Game PUBLIC EMSCRIPTEN)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --use-port=sdl3")
     foreach(asset IN LISTS ASSETS)
         # The alias needs to be set because the assets are stored outside of
