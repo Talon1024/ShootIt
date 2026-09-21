@@ -27,7 +27,7 @@
 #include <cstring>
 #include <array>
 #include <utility> // for the 'swap' function
-#ifdef EMSCRIPTEN
+#if (__EMSCRIPTEN__)
 #include <emscripten.h>
 #endif
 #include "main.h"
@@ -107,6 +107,7 @@ uint32_t getPrimaryDisplay()
     return primaryDisplayId;
 }
 
+#if not (__EMSCRIPTEN__)
 inline bool loadAssetAsync(const char* asset, uint32_t index)
 {
     char* fullpath;
@@ -121,6 +122,28 @@ inline bool loadAssetAsync(const char* asset, uint32_t index)
     SDL_free(fullpath);
     return result;
 }
+#else
+void onloadLoadCallback(unsigned requestHandle, void* userData, void* buffer, unsigned bufSize);
+void onerrorLoadCallback(unsigned requestHandle, void* userData, int errorCode, const char* errorText);
+inline bool loadAssetAsync(const char* asset, uint32_t index)
+{
+    char* fullpath;
+    SDL_asprintf(&fullpath, "%s/%s", "./", asset);
+    // Makes a AJAX/fetch request using Emscripten
+    emscripten_async_wget2_data(
+        fullpath,
+        "GET","", // Method and request parameters
+        new uint32_t {index}, // User data
+        0, // Do not automatically free the buffer. It is freed by fileLoaded.
+        onloadLoadCallback, // onload callback
+        onerrorLoadCallback, // onerror callback
+        nullptr // onprogress callback
+    );
+
+    SDL_free(fullpath);
+    return true;
+}
+#endif
 
 /* This function runs when a new event (mouse input, keypresses, etc) occurs. */
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
@@ -162,7 +185,22 @@ int32_t getPNGYOffset(void* bufdata, size_t bufsize)
 
 #define SPACE_WIDTH 5.0
 
-void RasterFont::drawText(const char* text, float x, float y) const {
+struct SoundResources {
+    SDL_AudioSpec specs[SFX_ASSET_COUNT];
+    uint8_t* buffers[SFX_ASSET_COUNT];
+    uint32_t lengths[SFX_ASSET_COUNT];
+};
+
+struct GameResources {
+    SDL_Texture* textures[GFX_ASSET_COUNT] = {};
+    SoundResources sounds = {};
+    RasterFont font = {};
+    LoadState loadState = LoadState::Loading;
+    size_t assetsLoaded = 0;
+} resources; // WARNING: Global mutable variable, use at your own risk!!
+
+void RasterFont::drawText(const char* text, float x, float y) const
+{
     size_t textLength = SDL_strlen(text);
     SDL_FRect charRect {x, y, 0.0, 0.0};
     for (size_t pos = 0; pos < textLength; pos++)
@@ -182,7 +220,7 @@ void RasterFont::drawText(const char* text, float x, float y) const {
         charRect.w = charInfo[curChar].width;
         charRect.h = charInfo[curChar].height;
         charRect.y = y + charInfo[curChar].yoffset;
-        SDL_RenderTexture(renderer, textures[assetIndex], nullptr, &charRect);
+        SDL_RenderTexture(renderer, resources.textures[assetIndex], nullptr, &charRect);
         charRect.x += charInfo[curChar].width + 1.0; // 1 pixel for kerning
     }
 }
@@ -208,7 +246,7 @@ bool RasterFont::assignAsset(uint32_t assetIndex, const DataBuffer& data)
     return true;
 }
 
-#ifdef EMSCRIPTEN
+#if (__EMSCRIPTEN__)
 EM_JS(void, signalReady, (float* pDifficulty, bool* pNewGame), {
     window.parent.postMessage({op: "ready"});
     window.addEventListener("message", ev => {
@@ -371,20 +409,14 @@ struct GameData {
     uint32_t second;
 };
 
-struct SoundResources {
-    SDL_AudioSpec specs[SFX_ASSET_COUNT];
-    uint8_t* buffers[SFX_ASSET_COUNT];
-    uint32_t lengths[SFX_ASSET_COUNT];
-};
-
 // Functions called during various loading/game states
-inline void frameLoading(SDL_Texture** textures, SoundResources& sounds, LoadState& loadState, RasterFont& font);
+inline void frameLoading();
 inline void frameLoadFail();
 inline void frameLoadSuccess();
-inline void frameWaitingToStart(SDL_Texture** textures, const RasterFont& font);
-inline void frameGamePlay(SDL_Texture** resources, GameData& game, const RasterFont& font);
-inline void frameGameWin(SDL_Texture** textures, const RasterFont& font);
-inline void frameGameLoss(SDL_Texture** textures, const RasterFont& font);
+inline void frameWaitingToStart();
+inline void frameGamePlay(GameData& game);
+inline void frameGameWin();
+inline void frameGameLoss();
 inline void gameNew(GameData& game, const float& difficulty);
 
 /* This function runs once per frame, and is the heart of the program.
@@ -394,17 +426,13 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 {
     // The "static" keyword makes these variables global, but only accessible
     // within the scope of this function.
-    static SDL_Texture* resources[GFX_ASSET_COUNT] = {};
-    static SoundResources sounds = {};
-    static LoadState loadState = LoadState::Loading;
     static GameState gameState = GameState::Loading;
-    static RasterFont font(resources);
     static GameData game;
     static bool drawn = false;
     static bool paused = false;
     static bool newGame = false;
     static float difficulty = 0.0;
-    if (newGame && loadState == LoadState::PostSuccess)
+    if (newGame && resources.loadState == LoadState::PostSuccess)
     {
         SDL_Log("Starting a new game! (difficulty: %.3f)", difficulty);
         gameNew(game, difficulty);
@@ -427,7 +455,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     case GameState::Play:
         if ((SDL_GetTicks() - lastTickTime) > GAME_TICK_TIME_MS)
         {
-            frameGamePlay(resources, game, font);
+            frameGamePlay(game);
             lastTickTime = SDL_GetTicks();
             switch(game.status)
             {
@@ -447,7 +475,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         if (!drawn)
         {
             signalDone(1);
-            frameGameWin(resources, font);
+            frameGameWin();
             drawn = true;
         }
         break;
@@ -455,7 +483,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         if (!drawn)
         {
             signalDone(0);
-            frameGameLoss(resources, font);
+            frameGameLoss();
             drawn = true;
         }
         break;
@@ -465,16 +493,16 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         // Draw everything drawn in the 'play' state, and then "Paused" on top.
         if (!drawn)
         {
-            frameGamePlay(resources, game);
+            frameGamePlay();
             font.drawText("Paused", 80, 80);
         }
         */
         break;
     case GameState::Loading:
-        switch (loadState)
+        switch (resources.loadState)
         {
         case LoadState::Loading:
-            frameLoading(resources, sounds, loadState, font);
+            frameLoading();
             break;
         case LoadState::Failure:
             frameLoadFail();
@@ -484,7 +512,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
             // and 'newGame'.
             signalReady(&difficulty, &newGame);
             frameLoadSuccess();
-            loadState = LoadState::PostSuccess;
+            resources.loadState = LoadState::PostSuccess;
             break;
         case LoadState::PostSuccess:
             SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
@@ -495,7 +523,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     case GameState::WaitingToStart:
         if (!drawn)
         {
-            frameWaitingToStart(resources, font);
+            frameWaitingToStart();
             drawn = true;
         }
         break;
@@ -596,7 +624,7 @@ inline void gameBombMove(GameBomb& bomb);
 inline void gameBombKill(GameData& game, uint32_t curBomb);
 
 // Render the game every tic
-inline void frameGamePlay(SDL_Texture** resources, GameData& game, const RasterFont& font)
+inline void frameGamePlay(GameData& game)
 {
     SDL_FRect renderRect;
     SDL_Rect collision;
@@ -685,29 +713,29 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game, const RasterF
     }
     // ========== Render background ==========
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-    SDL_RenderTexture(renderer, resources[ASSET_BG], nullptr, nullptr); // bg
+    SDL_RenderTexture(renderer, resources.textures[ASSET_BG], nullptr, nullptr); // bg
     // ========== Render game stuff ==========
     // Friend
     SDL_RectToFRect(&game.theFriend.rect, &renderRect);
-    SDL_RenderTexture(renderer, resources[ASSET_F_FRIEND], nullptr, &renderRect);
+    SDL_RenderTexture(renderer, resources.textures[ASSET_F_FRIEND], nullptr, &renderRect);
     // Foes
     for (uint32_t curEnemy = 0; curEnemy < game.activeEnemies; curEnemy++)
     {
         SDL_RectToFRect(&game.enemies[curEnemy].rect, &renderRect);
-        SDL_RenderTexture(renderer, resources[ASSET_F_ENEMY], nullptr, &renderRect);
+        SDL_RenderTexture(renderer, resources.textures[ASSET_F_ENEMY], nullptr, &renderRect);
     }
     // Explosions
     for (uint32_t curExpl = 0; curExpl < game.activeExplosions; curExpl++)
     {
         SDL_RectToFRect(&game.explosions[curExpl].rect, &renderRect);
-        SDL_RenderTexture(renderer, resources[explosionFrames[game.explosions[curExpl].frame]], nullptr, &renderRect);
+        SDL_RenderTexture(renderer, resources.textures[explosionFrames[game.explosions[curExpl].frame]], nullptr, &renderRect);
         game.explosions[curExpl].frame += 1;
     }
     // Bombs
     for (uint32_t curBomb = 0; curBomb < game.activeBombs; curBomb++)
     {
         SDL_RectToFRect(&game.bombs[curBomb].rect, &renderRect);
-        SDL_RenderTexture(renderer, resources[ASSET_F_BOMB], nullptr, &renderRect);
+        SDL_RenderTexture(renderer, resources.textures[ASSET_F_BOMB], nullptr, &renderRect);
     }
     // Crosshair
     renderRect = {
@@ -715,11 +743,11 @@ inline void frameGamePlay(SDL_Texture** resources, GameData& game, const RasterF
         game.cursor.y - 4.0f,
         7.0f, 7.0f
     };
-    SDL_RenderTexture(renderer, shoot ? resources[ASSET_X_GHAIR] : resources[ASSET_X_OHAIR], nullptr, &renderRect);
+    SDL_RenderTexture(renderer, shoot ? resources.textures[ASSET_X_GHAIR] : resources.textures[ASSET_X_OHAIR], nullptr, &renderRect);
     // Timer
     static char timerText[5] = {0}; // Time left: 0:45 (also static to reduce work)
     SDL_snprintf(timerText, 5, "0:%02u", game.second);
-    font.drawText(timerText, VIEW_WIDTH - 20, 1.0);
+    resources.font.drawText(timerText, VIEW_WIDTH - 20, 1.0);
     // Done with this frame
     SDL_RenderPresent(renderer);
     game.tick += 1;
@@ -831,17 +859,17 @@ inline void gameBombKill(GameData& game, uint32_t curBomb)
     game.activeBombs -= 1;
 }
 
-inline void frameGameWin(SDL_Texture** textures, const RasterFont& font)
+inline void frameGameWin()
 {
-    SDL_RenderTexture(renderer, textures[ASSET_BG], nullptr, nullptr);
-    font.drawText("Mr. Green is safe!", 70.0, 75.0);
+    SDL_RenderTexture(renderer, resources.textures[ASSET_BG], nullptr, nullptr);
+    resources.font.drawText("Mr. Green is safe!", 70.0, 75.0);
     SDL_RenderPresent(renderer);
 }
 
-inline void frameGameLoss(SDL_Texture** textures, const RasterFont& font)
+inline void frameGameLoss()
 {
-    SDL_RenderTexture(renderer, textures[ASSET_BG], nullptr, nullptr);
-    font.drawText("Mr. Green died...", 70.0, 75.0);
+    SDL_RenderTexture(renderer, resources.textures[ASSET_BG], nullptr, nullptr);
+    resources.font.drawText("Mr. Green died...", 70.0, 75.0);
     SDL_RenderPresent(renderer);
 }
 
@@ -863,16 +891,40 @@ struct LoadedAsset {
     DataBuffer data;
 };
 
-void fileLoaded(const LoadedAsset& asset, SDL_Texture** textures, SoundResources& sounds, RasterFont& font, uint32_t& assetsLoaded, LoadState& loadState);
+void fileLoaded(const LoadedAsset& asset);
+
+#if (__EMSCRIPTEN__)
+// callbacks for the emscripten async loading
+void onloadLoadCallback(unsigned requestHandle, void* userData, void* buffer, unsigned bufSize)
+{
+    // When file is successfully loaded
+    uint32_t assetIndex = *(uint32_t*) userData;
+    delete (uint32_t*) userData;
+    LoadedAsset asset {
+        assetIndex,
+        {buffer,
+         bufSize}
+    };
+    fileLoaded(asset);
+}
+
+void onerrorLoadCallback(unsigned requestHandle, void* userData, int errorCode, const char* errorText)
+{
+    uint32_t assetIndex = *(uint32_t*) userData;
+    delete (uint32_t*) userData;
+    resources.loadState = LoadState::Failure;
+    SDL_Log("Unable to load %s: Error %d %s", assets[assetIndex], errorCode, errorText);
+}
+#endif
 
 // "textures" is filled in with the successfully loaded textures
 // "loadState" is filled in with success or failure
 // "font" has assets assigned to bytes as the character images are loaded
-inline void frameLoading(SDL_Texture** textures, SoundResources& sounds, LoadState& loadState, RasterFont& font)
+inline void frameLoading()
 {
-    static uint32_t assetsLoaded = 0;
-    SDL_AsyncIOOutcome outcome;
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+#if not (__EMSCRIPTEN__)
+    SDL_AsyncIOOutcome outcome;
     if (SDL_GetAsyncIOResult(queue, &outcome))
     {
         uint32_t assetIndex = *(uint32_t*)outcome.userdata;
@@ -883,7 +935,7 @@ inline void frameLoading(SDL_Texture** textures, SoundResources& sounds, LoadSta
                 {outcome.buffer,
                 static_cast<size_t>(outcome.bytes_transferred)}
             };
-            fileLoaded(asset, textures, sounds, font, assetsLoaded, loadState);
+            fileLoaded(asset);
             // Part of SDL_LoadFileAsync
             // SDL_CloseAsyncIO(outcome.asyncio, true, queue, new uint32_t {CLOSE_FILE});
         }
@@ -892,13 +944,8 @@ inline void frameLoading(SDL_Texture** textures, SoundResources& sounds, LoadSta
             SDL_Log("Could not load asset %s: %s", assets[assetIndex], SDL_GetError());
             loadState = LoadState::Failure;
         }
-        if (assetsLoaded == TOTAL_ASSET_COUNT)
-        {
-            // finished loading!
-            loadState = LoadState::Success;
-        }
     }
-
+#endif
     SDL_RenderClear(renderer);
     // SDL_GetTicks() returns ms since program start
     // 500 ms is half a second
@@ -913,7 +960,7 @@ inline void frameLoading(SDL_Texture** textures, SoundResources& sounds, LoadSta
     SDL_RenderPresent(renderer);
 }
 
-void fileLoaded(const LoadedAsset& asset, SDL_Texture** textures, SoundResources& sounds, RasterFont& font, uint32_t& assetsLoaded, LoadState& loadState)
+void fileLoaded(const LoadedAsset& asset)
 {
     SDL_IOStream* dataStream = SDL_IOFromConstMem(
         asset.data.buffer,
@@ -921,29 +968,42 @@ void fileLoaded(const LoadedAsset& asset, SDL_Texture** textures, SoundResources
     );
     if (SDL_Surface* surf = SDL_LoadPNG_IO(dataStream, false))
     {
-        font.assignAsset(asset.index, asset.data);
-        textures[asset.index] = SDL_CreateTextureFromSurface(renderer, surf);
-        if (!textures[asset.index])
+        resources.font.assignAsset(asset.index, asset.data);
+        resources.textures[asset.index] = SDL_CreateTextureFromSurface(renderer, surf);
+        if (!resources.textures[asset.index])
         {
             SDL_Log("Couldn't create texture! %s", SDL_GetError());
-            loadState = LoadState::Failure;
+            resources.loadState = LoadState::Failure;
         }
         SDL_DestroySurface(surf);
-        assetsLoaded++;
+        resources.assetsLoaded++;
     }
     else
     {
-        uint32_t assetIndex = asset.index - GFX_ASSET_COUNT;
-        if (SDL_LoadWAV_IO(dataStream, false, &sounds.specs[assetIndex], &sounds.buffers[assetIndex], &sounds.lengths[assetIndex]))
+        // Sounds come after graphics in the built-in asset list
+        uint32_t soundIndex = asset.index - GFX_ASSET_COUNT;
+        if (SDL_LoadWAV_IO(dataStream, false,
+            &resources.sounds.specs[soundIndex],
+            &resources.sounds.buffers[soundIndex],
+            &resources.sounds.lengths[soundIndex]))
         {
-            assetsLoaded++;
+            resources.assetsLoaded++;
         }
     } /*else
-{
+    {
         SDL_Log("%s", SDL_GetError());
         loadState = LoadState::Failure;
     }*/
+#if not (__EMSCRIPTEN__)
     SDL_free(asset.data.buffer);
+#else
+    delete[] (uint8_t**) asset.data.buffer;
+#endif
+    if (resources.assetsLoaded == TOTAL_ASSET_COUNT)
+    {
+        // finished loading!
+        resources.loadState = LoadState::Success;
+    }
 }
 
 inline void frameLoadFail()
@@ -965,13 +1025,13 @@ inline void frameLoadSuccess()
 
 // "textures" is used to reference a texture
 // "font" is used to make it easier to reference font character textures
-inline void frameWaitingToStart(SDL_Texture** textures, const RasterFont& font)
+inline void frameWaitingToStart()
 {
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-    SDL_RenderTexture(renderer, textures[ASSET_BG], nullptr, nullptr);
-    font.drawText("Get Ready...", 90, 77);
+    SDL_RenderTexture(renderer, resources.textures[ASSET_BG], nullptr, nullptr);
+    resources.font.drawText("Get Ready...", 90, 77);
     SDL_RenderPresent(renderer);
 }
 

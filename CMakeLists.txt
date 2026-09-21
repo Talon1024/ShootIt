@@ -16,12 +16,6 @@ file(GLOB_RECURSE ASSETS LIST_DIRECTORIES false RELATIVE ${PROJECT_SOURCE_DIR} a
 if(EMSCRIPTEN)
     target_compile_definitions(Game PUBLIC EMSCRIPTEN)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --use-port=sdl3")
-    foreach(asset IN LISTS ASSETS)
-        # The alias needs to be set because the assets are stored outside of
-        # the build directory. The alias is the path from the project root to
-        # the file.
-        target_link_options(Game PRIVATE "SHELL:--embed-file ${PROJECT_SOURCE_DIR}/${asset}@${asset}")
-    endforeach()
     if(CMAKE_BUILD_TYPE STREQUAL Debug)
         target_link_options(Game PRIVATE "SHELL:-gsource-map")
         target_link_options(Game PRIVATE "SHELL:--emit-symbol-map")

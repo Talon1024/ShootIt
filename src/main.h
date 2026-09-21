@@ -22,7 +22,6 @@
 
 #pragma once
 #include <cstdint>
-#include <SDL3/SDL.h>
 
 #define VIEW_WIDTH 240
 #define VIEW_HEIGHT 160
@@ -62,9 +61,8 @@ private:
         float yoffset;
     } charInfo[256];
     // char name[16];  // For multiple font support
-    SDL_Texture** textures; // I don't think this is a good idea.
 public:
-    RasterFont(SDL_Texture** textures) : charInfo{}, textures(textures) {}
+    RasterFont() : charInfo{} {}
     void drawText(const char* text, float x, float y) const;
     bool assignAsset(uint32_t assetIndex, const DataBuffer& data);
 };
