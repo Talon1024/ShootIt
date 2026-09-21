@@ -442,6 +442,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         drawn = false;
     }
     static uint64_t lastTickTime = 0;
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     // How I got the mouse position before moving the logic into the frame function.
     /*
     float cursorX, cursorY;
@@ -505,8 +506,16 @@ SDL_AppResult SDL_AppIterate(void* appstate)
             frameLoading();
             break;
         case LoadState::Failure:
-            frameLoadFail();
+            if (!drawn)
+            {
+                frameLoadFail();
+                drawn = true;
+            }
+            else
+            {
             return SDL_APP_FAILURE;
+            }
+            break;
         case LoadState::Success:
             // From this point on, JavaScript has write access to 'difficulty'
             // and 'newGame'.
