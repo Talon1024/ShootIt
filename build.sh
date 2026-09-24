@@ -30,25 +30,24 @@ rm -rf nbuild wbuild ${projectname}.zip
 
 if ((native)); then
     cmake -B nbuild -DCMAKE_EXPORT_COMPILE_COMMANDS=1 . && \
-        cmake --build nbuild --parallel $(nproc)
+        cmake --build nbuild --parallel $(nproc) && \
+        ln -sr assets nbuild/assets
     retv=$?
-    ln -sr assets nbuild/assets
+else
+    if [[ -z $EMSDK ]]; then
+        source ~/misc/emsdk/emsdk_env.sh
+    fi
+
+    emcmake cmake -B wbuild "${emrun:+-DEMRUN=1}" "${emrun:+-DCMAKE_BUILD_TYPE=Debug}" . || exit 1 && \
+        cd wbuild && \
+        emmake make "-j$(nproc)" || exit 1 && \
+        ln -sr ../assets assets && \
+        cd ..
+    retv=$?
+
+    # TODO: Get this working if possible.
+    # emcmake cmake -B wbuild . -GNinja && emcmake cmake --build wbuild --parallel $(nproc)
+
+    zip -r ${projectname} wbuild/index.html wbuild/index.js wbuild/index.wasm wbuild/favicon.ico wbuild/assets
 fi
-
-if [[ -z $EMSDK ]]; then
-    source ~/misc/emsdk/emsdk_env.sh
-fi
-
-emcmake cmake -B wbuild "${emrun:+-DEMRUN=1}" "${emrun:+-DCMAKE_BUILD_TYPE=Debug}" . || exit 1 && \
-    cd wbuild && \
-    emmake make "-j$(nproc)" || exit 1 && \
-    ln -sr ../assets assets && \
-    cd ..
-retv=$?
-
-# TODO: Get this working if possible.
-# emcmake cmake -B wbuild . -GNinja && emcmake cmake --build wbuild --parallel $(nproc)
-
-zip -r ${projectname} wbuild/index.html wbuild/index.js wbuild/index.wasm wbuild/favicon.ico wbuild/assets
-
 return $retv
