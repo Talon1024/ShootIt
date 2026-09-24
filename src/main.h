@@ -30,7 +30,6 @@ enum class LoadState {
     Loading,
     Failure,
     Success,
-    PostSuccess, // So that the 'ready' message is only sent once.
 };
 
 enum class GameState {

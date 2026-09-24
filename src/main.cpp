@@ -255,6 +255,7 @@ bool RasterFont::assignAsset(uint32_t assetIndex, const DataBuffer& data)
 
 #if (__EMSCRIPTEN__)
 EM_JS(void, signalReady, (float* pDifficulty, bool* pNewGame), {
+    console.log("Ready to play");
     window.parent.postMessage({op: "ready"});
     window.addEventListener("message", ev => {
         if ("op" in ev.data)
@@ -281,6 +282,7 @@ EM_JS(void, signalDone, (int32_t won), {
 });
 #else
 void signalReady(float* difficulty, bool *pNewGame) {
+    SDL_Log("Ready to play");
     return;
 }
 void signalStart() {
@@ -450,9 +452,10 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     static GameData game;
     static bool drawn = false;
     static bool paused = false;
+    static bool readied = false;
     static bool newGame = false;
     static float difficulty = 0.0;
-    if (newGame && resources.getLoadState() == LoadState::PostSuccess)
+    if (newGame && readied && difficulty >= 0.0)
     {
         SDL_Log("Starting a new game! (difficulty: %.3f)", difficulty);
         gameNew(game, difficulty);
@@ -540,10 +543,11 @@ SDL_AppResult SDL_AppIterate(void* appstate)
             // From this point on, JavaScript has write access to 'difficulty'
             // and 'newGame'.
             signalReady(&difficulty, &newGame);
+            readied = true;
             frameLoadSuccess();
-            //resources.loadState = LoadState::PostSuccess;
-            //break;
-        case LoadState::PostSuccess:
+            // resources.loadState = LoadState::PostSuccess;
+            // break;
+        // case LoadState::PostSuccess:
             SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
             gameState = GameState::WaitingToStart;
             break;
